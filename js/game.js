@@ -1406,7 +1406,8 @@ function drawCockpitCanvases(car) {
 
 function updateCarCockpitView(dt) {
   if (!carCockpit) return;
-  const show = G.mode === 'playing' && !!activeVehicle && player.cameraMode === '1p';
+  const isCar = !activeVehicle || activeVehicle.type === 'car';
+  const show = G.mode === 'playing' && !!activeVehicle && player.cameraMode === '1p' && isCar;
   carCockpitRoot.visible = show;
   if (!show) return;
 
@@ -1478,7 +1479,8 @@ function updateCarCockpitView(dt) {
 
 function updateWeaponView(dt) {
   /* Strict asset culling: ONLY show 1st-person weapon viewmodel in 1P on foot while playing! */
-  const show = G.mode === 'playing' && !activeVehicle && player.cameraMode === '1p' && !!weaponGroups.length;
+  const aimingInVehicle = !!activeVehicle && (player.aiming || pointer.aiming || gamepadState.aim);
+  const show = G.mode === 'playing' && player.cameraMode === '1p' && !!weaponGroups.length && (!activeVehicle || aimingInVehicle);
   weaponRoot.visible = show;
   if (!show) {
     state.recoilPitch *= Math.exp(-dt * 13);
@@ -3041,20 +3043,44 @@ function steerDirectionWhiskers(x, z, dirX, dirZ, probeDist = 1.65) {
 
 function updateHostile(actor, dt, peersList) {
   if (!actor.alive) return;
+  const pos = actor.group.position;
   let target = activeVehicle ? activeVehicle.group.position : player.pos;
   if (actor.gangster) {
-    if (!actor.wanderX) { actor.wanderX = actor.group.position.x; actor.wanderZ = actor.group.position.z; actor.nextWander = rand(3, 7); actor.randomShootTimer = rand(4, 9); actor.aggressive = Math.random() < 0.35; }
+    if (!actor.wanderX) { actor.wanderX = actor.group.position.x; actor.wanderZ = actor.group.position.z; actor.nextWander = rand(3, 7); actor.randomShootTimer = rand(4, 9); }
     actor.nextWander -= dt;
     if (actor.nextWander <= 0 || dist2(actor.group.position.x, actor.group.position.z, actor.wanderX, actor.wanderZ) < 1.5) {
-      actor.aggressive = Math.random() < 0.35;
-      if (actor.aggressive) { actor.wanderX = player.pos.x; actor.wanderZ = player.pos.z; }
-      else { actor.wanderX = clamp(actor.group.position.x + rand(-30, 30), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10); actor.wanderZ = clamp(actor.group.position.z + rand(-30, 30), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10); }
+      actor.wanderX = clamp(actor.group.position.x + rand(-30, 30), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
+      actor.wanderZ = clamp(actor.group.position.z + rand(-30, 30), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
       actor.nextWander = rand(5, 12);
     }
     target = { x: actor.wanderX, z: actor.wanderZ };
+  } else if (actor.type === 'cop') {
+    /* Cops target nearest criminal (thug/gangster) if any, else player if wanted */
+    let criminal = null, cDist = 60;
+    for (const t of thugs) {
+      if (!t.alive) continue;
+      const d = dist2(pos.x, pos.z, t.group.position.x, t.group.position.z);
+      if (d < cDist) { cDist = d; criminal = t; }
+    }
+    if (criminal) {
+      target = { x: criminal.group.position.x, z: criminal.group.position.z };
+      actor.currentTarget = { x: criminal.group.position.x, z: criminal.group.position.z, actor: criminal };
+    } else {
+      actor.currentTarget = null;
+      if (state.wanted <= 0) {
+      /* Idle patrol: wander */
+      if (!actor.wanderX) { actor.wanderX = pos.x; actor.wanderZ = pos.z; actor.nextWander = rand(4, 8); }
+      actor.nextWander -= dt;
+      if (actor.nextWander <= 0 || dist2(pos.x, pos.z, actor.wanderX, actor.wanderZ) < 1.5) {
+        actor.wanderX = clamp(pos.x + rand(-20, 20), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
+        actor.wanderZ = clamp(pos.z + rand(-20, 20), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
+        actor.nextWander = rand(5, 10);
+      }
+      target = { x: actor.wanderX, z: actor.wanderZ };
+    }
+  }
   }
   const tx = target.x, tz = target.z;
-  const pos = actor.group.position;
   const dx = tx - pos.x, dz = tz - pos.z;
   const dist = Math.hypot(dx, dz);
 
@@ -3131,7 +3157,7 @@ function updateHostile(actor, dt, peersList) {
       randomGangShoot(actor);
     }
   }
-  if (actor.fireTimer <= 0 && actor.hasLos && dist < (actor.type === 'cop' ? 34 : 30)) {
+  if (!actor.gangster && actor.fireTimer <= 0 && actor.hasLos && dist < (actor.type === 'cop' ? 34 : 30)) {
     actor.fireTimer = actor.shootCooldown * rand(0.8, 1.25);
     hostileShoot(actor, dist);
   }
@@ -3140,13 +3166,8 @@ function updateHostile(actor, dt, peersList) {
 function randomGangShoot(actor) {
   if (!actor.alive) return;
   const from = new THREE.Vector3(actor.group.position.x, 1.42, actor.group.position.z);
-  let yaw, pitch = rand(-0.05, 0.05);
-  if (Math.random() < 0.35) {
-    const toP = Math.atan2(-(player.pos.x - actor.group.position.x), -(player.pos.z - actor.group.position.z));
-    yaw = toP + rand(-0.12, 0.12);
-  } else {
-    yaw = rand(0, Math.PI * 2);
-  }
+  const yaw = rand(0, Math.PI * 2);
+  const pitch = rand(-0.05, 0.05);
   const dir = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
   const end = from.clone().addScaledVector(dir, 60);
   const raycaster = new THREE.Raycaster(from, dir, 0, 60);
@@ -3157,16 +3178,6 @@ function randomGangShoot(actor) {
     /* hit wall, nothing */
   }
   if (hits.length && hits[0].object.userData.actor && hits[0].object.userData.actor === /*player*/ null) {}
-  /* Check player hit */
-  const playerDist = dist2(actor.group.position.x, actor.group.position.z, player.pos.x, player.pos.z);
-  if (playerDist < 40) {
-    const toPlayer = new THREE.Vector3(player.pos.x - from.x, 1.1 - from.y, player.pos.z - from.z);
-    const ang = Math.acos(clamp(dir.dot(toPlayer.normalize()), -1, 1));
-    if (ang < 0.08) {
-      applyPlayerDamage(8);
-      addWanted(1, 'GANG VIOLENCE');
-    }
-  }
   addTracer(from, end, 0xffb46b, 0.85);
   spawnParticles(from.x, from.y, from.z, 0xffcf7a, 4, 3, 0.2, 8);
   G.sound.policeShot();
@@ -3191,9 +3202,10 @@ function updateThugs(dt) {
 }
 
 function hostileShoot(actor, dist) {
-  const targetY = activeVehicle ? 1.1 : (player.crouching ? 0.85 : 1.15);
-  const tx = activeVehicle ? activeVehicle.group.position.x : player.pos.x;
-  const tz = activeVehicle ? activeVehicle.group.position.z : player.pos.z;
+  const ct = actor.currentTarget;
+  const targetY = ct && ct.actor ? 1.3 : (activeVehicle ? 1.1 : (player.crouching ? 0.85 : 1.15));
+  const tx = ct && ct.actor ? ct.x : (activeVehicle ? activeVehicle.group.position.x : player.pos.x);
+  const tz = ct && ct.actor ? ct.z : (activeVehicle ? activeVehicle.group.position.z : player.pos.z);
   const from = new THREE.Vector3(actor.group.position.x, actor.crouching ? 1.1 : 1.42, actor.group.position.z);
   const to = new THREE.Vector3(tx, targetY, tz);
   /* Crouching or sliding makes player harder to hit */
@@ -3210,7 +3222,11 @@ function hostileShoot(actor, dist) {
   spawnParticles(from.x, from.y, from.z, 0xffcf7a, 3, 2.4, 0.15, 4);
   if (actor.type === 'cop') G.sound.policeShot(); else G.sound.shoot('pistol');
   if (hit) {
-    applyPlayerDamage(actor.damage);
+    if (ct && ct.actor && ct.actor.alive) {
+      damageActor(ct.actor, actor.damage, to, false);
+    } else {
+      applyPlayerDamage(actor.damage);
+    }
   } else if (G.sound.bulletWhiz) {
     const rightX = Math.cos(player.yaw), rightZ = -Math.sin(player.yaw);
     const dx = from.x - tx, dz = from.z - tz;
@@ -3228,7 +3244,9 @@ function getShootTargets() {
 }
 
 function tryShoot() {
-  if (G.mode !== 'playing' || activeVehicle) return;
+  if (G.mode !== 'playing') return;
+  const canShootInVehicle = !!activeVehicle && (player.aiming || pointer.aiming || gamepadState.aim);
+  if (activeVehicle && !canShootInVehicle) return;
   if (state.reloading) return;
   const w = WEAPONS[state.weapon];
   if (state.fireTimer > 0) return;
@@ -3653,7 +3671,8 @@ function updateWeaponState(dt) {
       updateHUD();
     }
   }
-  if ((pointer.firing || gamepadState.fire) && G.mode === 'playing' && !activeVehicle) {
+  const canShootInVehicle = !!activeVehicle && (player.aiming || pointer.aiming || gamepadState.aim);
+  if ((pointer.firing || gamepadState.fire) && G.mode === 'playing' && (!activeVehicle || canShootInVehicle)) {
     tryShoot();
   }
 }
@@ -5129,10 +5148,10 @@ function updateCameraHeli(dt, v) {
   const camYaw = v.heading + player.carLookYaw;
   const camPitch = clamp(player.carLookPitch, -0.6, 0.6);
   if (player.cameraMode === '1p') {
-    const offset = new THREE.Vector3(0, 1.0, -0.4).applyAxisAngle(new THREE.Vector3(0, 1, 0), v.heading);
-    camera.position.set(v.x + offset.x, v.y + 0.3, v.z + offset.z);
+    const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
+    camera.position.set(v.x + fx * 0.6, v.y + 0.35, v.z + fz * 0.6);
     camera.rotation.order = 'YXZ';
-    camera.rotation.set(camPitch, camYaw, 0);
+    camera.rotation.set(camPitch - 0.05, camYaw, 0);
   } else {
     const backX = Math.sin(camYaw), backZ = Math.cos(camYaw);
     const dist = 9.0;
