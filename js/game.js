@@ -3671,7 +3671,7 @@ function showHitmarker(kill) {
    ============================================================ */
 function findNearestVehicle() {
   if (activeVehicle) return null;
-  let best = null, bestD = 5.2;
+  let best = null, bestD = 7.5;
   const all = cars.concat(helis, planes, boats);
   for (const v of all) {
     const d = dist2(player.pos.x, player.pos.z, v.x, v.z);
@@ -6645,6 +6645,7 @@ window.HEARTLAND = {
   gamepadState,
   get city() { return city; },
   get activeVehicle() { return activeVehicle; },
+  get nearestCar() { return nearestCar; },
   get helis() { return helis; },
   get planes() { return planes; },
   get boats() { return boats; },
@@ -6679,6 +6680,7 @@ window.HEARTLAND = {
   addTracer,
   enterCar,
   exitCar,
+  findNearestVehicle,
   startGame,
   pauseGame,
   resumeGame,

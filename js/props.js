@@ -707,17 +707,6 @@ KC.buildProps = function (city, blockData) {
   }
 
   /* ---------------- pilotable vehicle spawn spots ---------------- */
-  /* Helipad */
-  {
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 0.12, 16), new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.9 }));
-    pad.position.set(18, 0.06, 18);
-    scene.add(pad);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(4.6, 5.2, 24), new THREE.MeshBasicMaterial({ color: 0xffb13b, toneMapped: false, side: THREE.DoubleSide }));
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(18, 0.13, 18);
-    scene.add(ring);
-    addCollider(18, 18, 12, 12, 0.2, 'prop');
-  }
   /* Airstrip */
   {
     const strip = new THREE.Mesh(new THREE.PlaneGeometry(14, 120), new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.9 }));
@@ -740,8 +729,7 @@ KC.buildProps = function (city, blockData) {
   }
 
   city.vehicleSpots = city.vehicleSpots || [];
-  city.vehicleSpots.push({ type: 'heli', x: 18, z: 18, heading: 0, color: 0x1a3a5c, kind: 'parked' });
-  city.vehicleSpots.push({ type: 'heli', x: -140, z: -120, heading: Math.PI / 4, color: 0x2b4b7a, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'heli', x: -100, z: -100, heading: Math.PI / 4, color: 0x2b4b7a, kind: 'parked' });
   city.vehicleSpots.push({ type: 'plane', x: 120, z: -150, heading: 0, color: 0xd8d0c0, kind: 'parked' });
   city.vehicleSpots.push({ type: 'plane', x: -90, z: 120, heading: Math.PI, color: 0xc9c0b0, kind: 'parked' });
   city.vehicleSpots.push({ type: 'boat', x: 40, z: -235, heading: 0, color: 0xd8d0c0, kind: 'parked' });
