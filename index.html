@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a0a0d">
+  <title>HEARTLAND 26 — Kansas City Multiplayer Open-World Sandbox</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <div id="viewport" aria-hidden="true"></div>
+
+    <div id="fx" aria-hidden="true">
+      <div id="vignette"></div>
+      <div id="grain"></div>
+      <div id="damage-flash"></div>
+      <div id="low-health"></div>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div class="hud-top-left">
+        <div class="area-card">
+          <div class="area-name" id="area-name">DOWNTOWN</div>
+          <div class="area-sub">KANSAS CITY, MO <span>//</span> 2026</div>
+        </div>
+        <div class="objective-card" id="objective-card">
+          <div class="objective-label"><span class="pulse-dot"></span>CONTRACT</div>
+          <div class="objective-title" id="objective-title">MEET THE CONTACT</div>
+          <div class="objective-sub" id="objective-sub">KAUFFMAN CENTER <span class="objective-dist" id="objective-dist">0 m</span></div>
+        </div>
+        <div class="objective-card event-card hidden" id="event-card">
+          <div class="objective-label event-label"><span class="pulse-dot pink"></span>LIVE RANDOM EVENT <span class="event-key-hint">[J]</span></div>
+          <div class="objective-title" id="event-title">ARMORED BANK CONVOY</div>
+          <div class="objective-sub" id="event-sub">INTERCEPT THE PAYLOAD <span class="objective-dist event-dist" id="event-dist">0 m</span></div>
+        </div>
+        <div class="session-hud-card">
+          <div class="session-hud-row">
+            <span class="pulse-dot teal"></span>
+            <span id="hud-session-code">KC-2026</span>
+            <span class="session-sep">//</span>
+            <span id="hud-session-count">4 ONLINE</span>
+          </div>
+          <div class="voice-hud-badge" id="hud-voice-status">🎙 PTT [T] · 45m RANGE</div>
+          <div class="voice-peers-list" id="hud-voice-peers"></div>
+        </div>
+      </div>
+
+      <div class="hud-top-right">
+        <div class="cash" id="cash">$0</div>
+        <div class="clock" id="clock">19:30 · DUSK · CLEAR</div>
+        <div class="wanted" id="wanted">
+          <span class="wanted-label">WANTED</span>
+          <div class="stars" id="stars">
+            <span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="banner" class="banner">
+        <div class="banner-rule"></div>
+        <div class="banner-title" id="banner-title">WELCOME TO KC</div>
+        <div class="banner-sub" id="banner-sub">THE CITY IS YOURS</div>
+        <div class="banner-rule"></div>
+      </div>
+
+      <div id="crosshair" class="crosshair">
+        <span class="ch ch-t"></span><span class="ch ch-r"></span><span class="ch ch-b"></span><span class="ch ch-l"></span>
+        <span class="ch-dot"></span>
+        <div class="hitmarker" id="hitmarker"><span></span><span></span><span></span><span></span></div>
+      </div>
+
+      <div id="vehicle-prompt" class="vehicle-prompt hidden"><span class="key">E</span> ENTER VEHICLE</div>
+      <div id="mission-prompt" class="mission-prompt hidden"><span class="key">E</span> START CONTRACT</div>
+
+      <div id="notifications" class="notifications"></div>
+
+      <div class="hud-bottom-left">
+        <div class="stat-bars">
+          <div class="stat-row health-row">
+            <span class="stat-icon">✚</span>
+            <div class="stat-track"><div id="health-fill" class="stat-fill health"></div></div>
+            <span id="health-num" class="stat-num">100</span>
+          </div>
+          <div class="stat-row armor-row">
+            <span class="stat-icon">◆</span>
+            <div class="stat-track"><div id="armor-fill" class="stat-fill armor"></div></div>
+            <span id="armor-num" class="stat-num">50</span>
+          </div>
+        </div>
+        <div class="minimap-wrap">
+          <canvas id="minimap" width="360" height="360"></canvas>
+          <div class="minimap-ring"></div>
+          <div class="minimap-north">N</div>
+          <div class="minimap-label" id="minimap-label">DOWNTOWN</div>
+        </div>
+      </div>
+
+      <div class="hud-bottom-right">
+        <div class="tactical-pills">
+          <span class="tac-pill hidden" id="hud-gamepad">🎮 XINPUT</span>
+          <span class="tac-pill" id="hud-stance">STAND · 1P</span>
+          <span class="tac-pill" id="hud-flashlight">FLASHLIGHT OFF [F]</span>
+          <span class="tac-pill" id="hud-zoom">ZOOM 1.3x</span>
+        </div>
+        <div id="weapon-hud" class="weapon-hud">
+          <div class="weapon-header"><span id="weapon-slot">01</span><span id="weapon-name">9MM PISTOL</span></div>
+          <div class="ammo-row"><span id="ammo">12</span><span class="ammo-slash">/</span><span id="reserve">∞</span></div>
+          <div class="weapon-bar"><div id="weapon-bar-fill"></div></div>
+          <div class="weapon-slots"><span class="slot active" id="slot-1">1 · PISTOL</span><span class="slot" id="slot-2">2 · RIFLE</span></div>
+          <div class="reload-hint" id="reload-hint">R // RELOAD</div>
+        </div>
+        <div id="vehicle-hud" class="vehicle-hud hidden">
+          <div class="speed-row"><span id="speed">0</span><span class="mph">MPH</span></div>
+          <div class="speed-bar"><div id="speed-fill"></div></div>
+          <div class="vehicle-name" id="vehicle-name">VULCAN GT</div>
+          <div class="vehicle-exit"><span class="key">E</span> EXIT · <span class="key">V</span> 1P/3P CAM</div>
+        </div>
+      </div>
+
+      <div class="toast" id="toast"></div>
+    </div>
+
+    <section id="start-screen" class="screen start-screen">
+      <div class="menu-shade"></div>
+      <div class="menu-scanlines"></div>
+      <header class="menu-header">
+        <div class="brand"><span class="brand-mark"></span>HEARTLAND<span class="brand-slash">//</span><span class="brand-tag">KC MULTIPLAYER SANDBOX</span></div>
+        <div class="build">LOW-POLY GTA × ROBLOX <span>KC / 26</span></div>
+      </header>
+
+      <div class="menu-content">
+        <div class="eyebrow"><span class="eyebrow-line"></span>KANSAS CITY, MISSOURI <span>//</span> EXTENDED 81-BLOCK METROPOLIS</div>
+        <h1 class="title">HEART<span>LAND</span></h1>
+        <div class="title-row">
+          <div class="year">26</div>
+          <div class="title-rule"></div>
+          <div class="title-note">MULTIPLAYER SESSIONS<br>PROXIMITY VOICE · DAY/NIGHT</div>
+        </div>
+        <p class="tagline">MONEY. POWER. MIDWEST.</p>
+        <p class="blurb">From River Market to Country Club Plaza. Customize your runner, link up in multiplayer sessions with 45m spatial voice chat, and own the streets day or night.</p>
+
+        <div class="menu-actions">
+          <button id="start-btn" class="btn btn-primary">
+            <span class="btn-index">01</span><span class="btn-label">ENTER THE CITY</span><span class="btn-arrow">→</span>
+          </button>
+          <button id="open-char-btn" class="btn btn-secondary">
+            <span class="btn-index">02</span><span>CUSTOMIZE CHARACTER</span>
+          </button>
+          <button id="open-session-btn" class="btn btn-secondary">
+            <span class="btn-index">03</span><span>MULTIPLAYER SESSION</span>
+          </button>
+          <button id="open-world-btn" class="btn btn-secondary">
+            <span class="btn-index">04</span><span>DAY/NIGHT &amp; WEATHER</span>
+          </button>
+        </div>
+        <div class="menu-meta" style="margin-top: 10px;">
+          SESSION: <strong id="menu-session-status">KC-2026 // 4 PLAYERS (LOCAL MESH)</strong> · XINPUT CONTROLLER READY<br>
+          GAME RULES: <strong id="menu-world-status">DYNAMIC 24H (19:30 · FAST) // WEATHER: DYNAMIC (BALANCED)</strong>
+        </div>
+
+        <div class="controls">
+          <div class="control"><span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span><span class="control-label">MOVE</span></div>
+          <div class="control"><span class="key key-wide">LMB/RMB</span><span class="control-label">FIRE / AIM</span></div>
+          <div class="control"><span class="key">Q</span><span class="key">E</span><span class="control-label">LEAN L/R</span></div>
+          <div class="control"><span class="key">C</span><span class="control-label">CROUCH/SLIDE</span></div>
+          <div class="control"><span class="key">F</span><span class="control-label">FLASHLIGHT</span></div>
+          <div class="control"><span class="key">V</span><span class="control-label">1P / 3P CAM</span></div>
+          <div class="control"><span class="key">B</span><span class="control-label">ZOOM 1x-3x</span></div>
+          <div class="control"><span class="key">T</span><span class="control-label">VOICE (45m)</span></div>
+          <div class="control"><span class="key">E</span><span class="control-label">VEHICLE</span></div>
+          <div class="control"><span class="key">N</span><span class="control-label">WEATHER</span></div>
+          <div class="control"><span class="key">K</span><span class="control-label">TIME +4H</span></div>
+          <div class="control"><span class="key">J</span><span class="control-label">LIVE EVENT</span></div>
+          <div class="control"><span class="key key-wide">XINPUT</span><span class="control-label">GAMEPAD</span></div>
+        </div>
+      </div>
+
+      <aside class="menu-side" aria-hidden="true">
+        <span class="side-label">EXTENDED KC GRID</span>
+        <div class="side-line"><span>BERKLEY RIVERFRONT</span><b>LIVE</b></div>
+        <div class="side-line"><span>POWER &amp; LIGHT</span><b>LIVE</b></div>
+        <div class="side-line"><span>BARTLE HALL</span><b>LIVE</b></div>
+        <div class="side-line"><span>COUNTRY CLUB PLAZA</span><b>LIVE</b></div>
+        <div class="side-line"><span>PROXIMITY VOICE</span><b>45M</b></div>
+        <div class="side-meter"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <span class="side-value">LOW-POLY 60FPS OPTIMIZED</span>
+      </aside>
+
+      <footer class="menu-footer">
+        <span>MOUSE + KEYBOARD OR XINPUT CONTROLLER</span>
+        <span class="footer-coords">39.0997° N / 94.5786° W</span>
+        <span class="disclaimer">AN ORIGINAL LOW-POLY TRIBUTE · KANSAS CITY SANDBOX</span>
+      </footer>
+    </section>
+
+    <!-- Character Customization Modal -->
+    <section id="char-modal" class="screen overlay-screen hidden" style="z-index: 45;">
+      <div class="overlay-panel modal-panel char-modal-panel">
+        <div class="overlay-kicker">ROBLOX × GTA LOW-POLY WARDROBE</div>
+        <h2>CHARACTER</h2>
+        <div class="panel-rule"></div>
+        <div class="char-customizer-grid">
+          <div class="char-preview-col">
+            <canvas id="char-preview-canvas" width="220" height="280"></canvas>
+            <button id="char-random-btn" class="btn btn-ghost">🎲 RANDOMIZE LOOK</button>
+          </div>
+          <div class="char-options-col">
+            <div class="char-field">
+              <label for="char-callsign">CALLSIGN</label>
+              <input id="char-callsign" type="text" maxlength="14" value="KC_OUTLAW" class="text-input">
+            </div>
+            <div class="char-selector"><span>SKIN TONE</span><div><button id="skin-prev" class="mini-btn">‹</button><b id="char-skin-val">WARM TAN</b><button id="skin-next" class="mini-btn">›</button></div></div>
+            <div class="char-selector"><span>HEADGEAR / HAIR</span><div><button id="hair-prev" class="mini-btn">‹</button><b id="char-hair-val">KC SNAPBACK</b><button id="hair-next" class="mini-btn">›</button></div></div>
+            <div class="char-selector"><span>HAIR / HAT COLOR</span><div><button id="haircol-prev" class="mini-btn">‹</button><b id="char-haircol-val">KC RED</b><button id="haircol-next" class="mini-btn">›</button></div></div>
+            <div class="char-selector"><span>OUTFIT STYLE</span><div><button id="outfit-prev" class="mini-btn">‹</button><b id="char-outfit-val">BOMBER JACKET</b><button id="outfit-next" class="mini-btn">›</button></div></div>
+            <div class="char-selector"><span>PRIMARY COLOR</span><div><button id="shirt-prev" class="mini-btn">‹</button><b id="char-shirt-val">KC CRIMSON</b><button id="shirt-next" class="mini-btn">›</button></div></div>
+            <div class="char-selector"><span>ACCENT COLOR</span><div><button id="accent-prev" class="mini-btn">‹</button><b id="char-accent-val">AMBER GOLD</b><button id="accent-next" class="mini-btn">›</button></div></div>
+            <div class="char-selector"><span>PANTS</span><div><button id="pants-prev" class="mini-btn">‹</button><b id="char-pants-val">DARK DENIM</b><button id="pants-next" class="mini-btn">›</button></div></div>
+            <div class="char-selector"><span>ACCESSORY</span><div><button id="acc-prev" class="mini-btn">‹</button><b id="char-acc-val">DARK SHADES</b><button id="acc-next" class="mini-btn">›</button></div></div>
+          </div>
+        </div>
+        <button id="close-char-btn" class="btn btn-primary btn-small">SAVE &amp; APPLY <span>→</span></button>
+      </div>
+    </section>
+
+    <!-- Multiplayer Session & Proximity Voice Modal -->
+    <section id="session-modal" class="screen overlay-screen hidden" style="z-index: 45;">
+      <div class="overlay-panel modal-panel" style="width: min(560px, 94vw);">
+        <div class="overlay-kicker">KANSAS CITY MULTIPLAYER NETWORK // FREE P2P &amp; WS</div>
+        <h2>SESSIONS</h2>
+        <div class="panel-rule"></div>
+        <div class="char-field" style="margin-bottom: 10px;">
+          <label for="session-code-input">SESSION ROOM CODE &amp; SHAREABLE INVITE</label>
+          <div style="display: flex; gap: 8px; margin-top: 6px;">
+            <input id="session-code-input" type="text" maxlength="12" value="KC-2026" class="text-input" style="flex: 1;">
+            <button id="join-session-btn" class="btn btn-primary" style="padding: 10px 14px;">JOIN ROOM</button>
+            <button id="copy-invite-btn" class="btn btn-secondary" style="padding: 10px 14px; border-color: var(--teal); color: var(--teal);">🔗 COPY LINK</button>
+          </div>
+        </div>
+        <div style="padding: 8px 11px; margin-bottom: 8px; background: rgba(87,230,194,0.07); border-left: 2px solid var(--teal); font-size: 10px; letter-spacing: 0.14em; line-height: 1.55;">
+          <div style="color: var(--teal); font-weight: 700;">TRANSPORT: <span id="session-transport-badge">LIVE SERVER + GLOBAL P2P MESH</span></div>
+          <div style="color: var(--cream); word-break: break-all;">JOIN URL: <span id="session-invite-url">http://localhost:8080/?room=KC-2026</span></div>
+          <div id="session-lan-url" style="color: var(--cream-dim);">LAN / FREE HOST: READY (SEE HOSTING.MD)</div>
+        </div>
+        <button id="session-bots-toggle" class="btn btn-ghost">SQUAD RUNNERS: ON</button>
+        <button id="session-voice-toggle" class="btn btn-ghost">VOICE: PUSH-TO-TALK [T] (45m)</button>
+        <button id="session-world-btn" class="btn btn-ghost">CONFIGURE GAME DAY/NIGHT &amp; WEATHER</button>
+        <div class="overlay-note" style="margin-top: 10px; line-height: 1.45;">
+          FREE HOSTING: DEPLOY FREE ON GITHUB PAGES / NETLIFY / CLOUDFLARE PAGES (USES BUILT-IN WEBRTC P2P), RENDER.COM FREE TIER (RENDER.YAML), OR RUN <b>NPX LOCALTUNNEL --PORT 8080</b>.
+        </div>
+        <button id="close-session-btn" class="btn btn-primary btn-small">DONE <span>→</span></button>
+      </div>
+    </section>
+
+    <!-- Per-Game Day/Night Cycle & Weather Settings Modal -->
+    <section id="world-modal" class="screen overlay-screen hidden" style="z-index: 46;">
+      <div class="overlay-panel modal-panel">
+        <div class="overlay-kicker">PER-GAME ENVIRONMENT &amp; ATMOSPHERE</div>
+        <h2>WORLD RULES</h2>
+        <div class="panel-rule"></div>
+        <div class="char-options-col" style="margin-bottom: 14px;">
+          <div class="char-selector">
+            <span>DAY / NIGHT MODE</span>
+            <div>
+              <button id="world-dn-prev" class="mini-btn">‹</button>
+              <b id="world-dn-mode-val">DYNAMIC 24H CYCLE</b>
+              <button id="world-dn-next" class="mini-btn">›</button>
+            </div>
+          </div>
+          <div class="char-selector">
+            <span>CYCLE SPEED</span>
+            <div>
+              <button id="world-speed-prev" class="mini-btn">‹</button>
+              <b id="world-cycle-speed-val">FAST (80S / DAY)</b>
+              <button id="world-speed-next" class="mini-btn">›</button>
+            </div>
+          </div>
+          <div class="settings" style="margin: 8px 0;">
+            <label for="world-start-time-slider">STARTING / CUSTOM TIME OF DAY <output id="world-start-time-val">19:30</output></label>
+            <input id="world-start-time-slider" type="range" min="0" max="1439" step="5" value="1170">
+          </div>
+          <div class="char-selector">
+            <span>WEATHER MODE</span>
+            <div>
+              <button id="world-weather-prev" class="mini-btn">‹</button>
+              <b id="world-weather-mode-val">DYNAMIC WEATHER</b>
+              <button id="world-weather-next" class="mini-btn">›</button>
+            </div>
+          </div>
+          <div class="char-selector">
+            <span>WEATHER FREQUENCY</span>
+            <div>
+              <button id="world-wfreq-prev" class="mini-btn">‹</button>
+              <b id="world-weather-freq-val">BALANCED (STANDARD)</b>
+              <button id="world-wfreq-next" class="mini-btn">›</button>
+            </div>
+          </div>
+        </div>
+        <div class="overlay-note" style="margin-bottom: 8px;">
+          SETTINGS APPLY PER GAME SESSION &amp; SYNC ACROSS MULTIPLAYER PEERS.
+        </div>
+        <button id="close-world-btn" class="btn btn-primary btn-small">SAVE &amp; APPLY <span>→</span></button>
+      </div>
+    </section>
+
+    <section id="pause-screen" class="screen overlay-screen hidden">
+      <div class="overlay-panel">
+        <div class="overlay-kicker">CITY SIMULATION SUSPENDED</div>
+        <h2>PAUSED</h2>
+        <div class="panel-rule"></div>
+        <div class="overlay-stats">
+          <div><span>CASH</span><strong id="pause-cash">$0</strong></div>
+          <div><span>WANTED</span><strong id="pause-wanted">CLEAR</strong></div>
+        </div>
+        <div class="settings" style="margin: 14px 0 10px;">
+          <label for="sens">LOOK SENSITIVITY <output id="sens-value">1.0</output></label>
+          <input id="sens" type="range" min="0.4" max="2" step="0.1" value="1">
+        </div>
+        <div class="char-options-col" style="margin-bottom: 10px;">
+          <div class="char-selector">
+            <span>DAY / NIGHT MODE</span>
+            <div>
+              <button id="pause-dn-prev" class="mini-btn">‹</button>
+              <b id="pause-dn-mode-val">DYNAMIC 24H CYCLE</b>
+              <button id="pause-dn-next" class="mini-btn">›</button>
+            </div>
+          </div>
+          <div class="char-selector">
+            <span>CYCLE SPEED</span>
+            <div>
+              <button id="pause-speed-prev" class="mini-btn">‹</button>
+              <b id="pause-cycle-speed-val">FAST (80S / DAY)</b>
+              <button id="pause-speed-next" class="mini-btn">›</button>
+            </div>
+          </div>
+          <div class="settings" style="margin: 6px 0;">
+            <label for="tod-slider">TIME OF DAY <output id="tod-value">19:30</output></label>
+            <input id="tod-slider" type="range" min="0" max="1439" step="5" value="1170">
+          </div>
+          <div class="char-selector">
+            <span>WEATHER MODE</span>
+            <div>
+              <button id="pause-weather-prev" class="mini-btn">‹</button>
+              <b id="pause-weather-mode-val">DYNAMIC WEATHER</b>
+              <button id="pause-weather-next" class="mini-btn">›</button>
+            </div>
+          </div>
+          <div class="char-selector">
+            <span>WEATHER FREQUENCY</span>
+            <div>
+              <button id="pause-wfreq-prev" class="mini-btn">‹</button>
+              <b id="pause-weather-freq-val">BALANCED (STANDARD)</b>
+              <button id="pause-wfreq-next" class="mini-btn">›</button>
+            </div>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <button id="pause-char-btn" class="btn btn-ghost">CHARACTER</button>
+          <button id="pause-session-btn" class="btn btn-ghost">MULTIPLAYER &amp; VOICE</button>
+        </div>
+        <button id="pause-event-btn" class="btn btn-ghost" style="border-color: rgba(255,95,143,0.45); color: #ff5f8f;">⚡ SPAWN RANDOM EVENT [J]</button>
+        <button id="resume-btn" class="btn btn-primary btn-small">RESUME <span>→</span></button>
+        <button id="pause-quit-btn" class="btn btn-ghost">RETURN TO MENU</button>
+        <div class="overlay-note">CLICK RESUME OR PRESS START TO RE-ENTER THE CITY</div>
+      </div>
+    </section>
+
+    <section id="death-screen" class="screen overlay-screen death-screen hidden">
+      <div class="overlay-panel">
+        <div class="overlay-kicker danger">KANSAS CITY POLICE DEPARTMENT // 911</div>
+        <h2 class="death-title">WASTED</h2>
+        <div class="panel-rule"></div>
+        <div class="death-stats">
+          <div><span>CASH</span><strong id="death-cash">$0</strong></div>
+          <div><span>CONTRACTS</span><strong id="death-missions">0</strong></div>
+          <div><span>TAKEDOWNS</span><strong id="death-kills">0</strong></div>
+          <div><span>MEDICAL FEE</span><strong class="fee">-$100</strong></div>
+        </div>
+        <div id="new-best" class="new-best hidden">NEW PERSONAL BEST</div>
+        <button id="respawn-btn" class="btn btn-primary btn-small">WAKE UP <span>→</span></button>
+        <button id="death-menu-btn" class="btn btn-ghost">RETURN TO MENU</button>
+      </div>
+    </section>
+
+    <div id="pointer-hint" class="pointer-hint hidden">CLICK TO CAPTURE MOUSE</div>
+  </div>
+
+  <script src="vendor/three.min.js"></script>
+  <script src="vendor/peerjs.min.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/landmarks.js"></script>
+  <script src="js/props.js"></script>
+  <script src="js/multiplayer.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>

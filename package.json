@@ -1,0 +1,15 @@
+{
+  "name": "heartland-26-kc",
+  "version": "1.0.0",
+  "description": "HEARTLAND 26 — Kansas City Low-Poly Multiplayer Open-World Sandbox (GTA x Roblox)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "host:tunnel": "npx localtunnel --port 8080",
+    "host:cloudflare": "npx cloudflared tunnel --url http://localhost:8080"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

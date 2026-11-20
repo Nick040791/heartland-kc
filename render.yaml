@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: heartland-26-kc
+    runtime: node
+    plan: free
+    buildCommand: echo "Zero external build dependencies required"
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
