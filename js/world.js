@@ -19,7 +19,7 @@ KC.formatMoney = (n) => '$' + Math.max(0, Math.round(n)).toLocaleString('en-US')
 KC.ROAD_LINES = [-180, -140, -100, -60, -20, 20, 60, 100, 140, 180];
 KC.ROAD_HALF = 5;
 KC.BLOCK_SIZE = 30;
-KC.WORLD_LIMIT = 192;
+KC.WORLD_LIMIT = 260;
 KC.WINDOW_UNIT = 8;
 
 KC.makeCanvasTexture = function (canvas, srgb = true) {
@@ -648,7 +648,7 @@ KC.buildCity = function (scene) {
   };
 
   /* Extended ground + roads */
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(540, 540), new THREE.MeshStandardMaterial({ color: 0x16161b, roughness: 1 }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(680, 680), new THREE.MeshStandardMaterial({ color: 0x16161b, roughness: 1 }));
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.06;
   ground.receiveShadow = true;

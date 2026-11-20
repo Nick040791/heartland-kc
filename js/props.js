@@ -326,6 +326,7 @@ KC.buildProps = function (city, blockData) {
 
   /* Interactive KC Street Food & Coffee Vendor Carts (Press [E] for $25 Health & Speed Boost!) */
   city.vendorCarts = [];
+  city.shops = [];
   function addVendorCart(x, z, ry, name, tagColor = '#ffb13b') {
     const g = new THREE.Group();
     const cartMat = city.awningMats ? KC.pick(city.awningMats) : benchWood;
@@ -368,6 +369,37 @@ KC.buildProps = function (city, blockData) {
   addVendorCart(-36.5, 67.5, 0, 'WESTPORT TACOS & BBQ $25', '#ffb13b');
   addVendorCart(52.5, 97.5, 0, 'JACK STACK SMOKE CART $25', '#ffc77a');
 
+  /* ---------------- Buyable Shops (Guns, Armor, Ammo) ---------------- */
+  function addShop(x, z, ry, name, type, tagColor) {
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.2, 1.6), materials.darkMetal);
+    base.position.y = 0.72;
+    base.castShadow = true;
+    const counter = new THREE.Mesh(new THREE.BoxGeometry(2.75, 0.12, 1.75), materials.metalMat || materials.darkMetal);
+    counter.position.y = 1.32;
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.24, 1.9), materials.awningMats ? KC.pick(materials.awningMats) : materials.darkMetal);
+    canopy.position.y = 2.45;
+    canopy.castShadow = true;
+    g.add(base, counter, canopy);
+    /* Gun/armor/ammo display cases */
+    const caseMat = new THREE.MeshStandardMaterial({ color: 0x1a1a22, roughness: 0.4, metalness: 0.7 });
+    const disp = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.9, 0.6), caseMat);
+    disp.position.set(0, 1.85, 0.55);
+    g.add(disp);
+    g.position.set(x, 0.14, z);
+    g.rotation.y = ry;
+    scene.add(g);
+    registerCullItem(g, x, z, 130);
+    addCollider(x, z, 2.6, 1.6, 2.5, 'prop');
+    addSign(name, tagColor, x, 2.85, z, ry, 2.6, 0.5, { bg: '#121118' });
+    city.shops.push({ x, z, name, type, group: g });
+  }
+  addShop(-6.5, 22.5, 0, 'KC GUN SHOP', 'gun', '#ff3b3b');
+  addShop(28.5, 4.5, Math.PI / 2, 'ARMOR DEPOT', 'armor', '#57e6c2');
+  addShop(-22.5, -4.5, 0, 'AMMO CACHE', 'ammo', '#ffb13b');
+  addShop(96.5, 67.5, 0, '18TH & VINE GUNS', 'gun', '#ff3b3b');
+  addShop(-36.5, 67.5, 0, 'WESTPORT ARMOR', 'armor', '#57e6c2');
+  addShop(52.5, 97.5, 0, 'PLAZA AMMO', 'ammo', '#ffb13b');
   /* Animated Low-Poly KC Streetcar Tram gliding along Main St (x = -20) */
   {
     const tram = new THREE.Group();
@@ -469,9 +501,9 @@ KC.buildProps = function (city, blockData) {
     emissive: 0x061520,
     emissiveIntensity: 0.38
   });
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(520, 170), waterMat);
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(680, 260), waterMat);
   water.rotation.x = -Math.PI / 2;
-  water.position.set(0, -0.42, -268);
+  water.position.set(0, -0.42, -300);
   scene.add(water);
   city.water = water;
 
@@ -491,7 +523,7 @@ KC.buildProps = function (city, blockData) {
     const mastLight = new THREE.Mesh(new THREE.SphereGeometry(0.22, 6, 4), bulbMat);
     mastLight.position.set(-5.8, 4.1, 0);
     barge.add(hull, deck, cabinB, cargo1, cargo2, mastLight);
-    barge.position.set(-40, -0.35, -234);
+    barge.position.set(-40, -0.35, -260);
     scene.add(barge);
 
     city.updaters.push((t) => {
@@ -674,14 +706,55 @@ KC.buildProps = function (city, blockData) {
     }
   }
 
+  /* ---------------- pilotable vehicle spawn spots ---------------- */
+  /* Helipad */
+  {
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 0.12, 16), new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.9 }));
+    pad.position.set(18, 0.06, 18);
+    scene.add(pad);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(4.6, 5.2, 24), new THREE.MeshBasicMaterial({ color: 0xffb13b, toneMapped: false, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(18, 0.13, 18);
+    scene.add(ring);
+    addCollider(18, 18, 12, 12, 0.2, 'prop');
+  }
+  /* Airstrip */
+  {
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(14, 120), new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.9 }));
+    strip.rotation.x = -Math.PI / 2;
+    strip.position.set(120, 0.04, -150);
+    scene.add(strip);
+    for (const z of [-200, -180, -160, -140, -120, -100]) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 6), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(120, 0.05, z);
+      scene.add(m);
+    }
+  }
+  /* Marina dock */
+  {
+    const dock = new THREE.Mesh(new THREE.BoxGeometry(6, 0.3, 24), new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.9 }));
+    dock.position.set(40, -0.1, -235);
+    scene.add(dock);
+    addCollider(40, -235, 6, 24, 0.5, 'prop');
+  }
+
+  city.vehicleSpots = city.vehicleSpots || [];
+  city.vehicleSpots.push({ type: 'heli', x: 18, z: 18, heading: 0, color: 0x1a3a5c, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'heli', x: -140, z: -120, heading: Math.PI / 4, color: 0x2b4b7a, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'plane', x: 120, z: -150, heading: 0, color: 0xd8d0c0, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'plane', x: -90, z: 120, heading: Math.PI, color: 0xc9c0b0, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'boat', x: 40, z: -235, heading: 0, color: 0xd8d0c0, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'boat', x: -60, z: -245, heading: Math.PI / 2, color: 0x2b4b7a, kind: 'parked' });
+
   /* ---------------- extended district labels ---------------- */
   city.mapData = {
-    bounds: 194,
+    bounds: 262,
     lines: KC.ROAD_LINES.slice(),
     blocks: blockData.map((b) => ({
       x: b.cx, z: b.cz, size: 30, name: b.name, landmark: b.landmark, park: !!b.park
     })),
-    water: { minZ: -340, maxZ: -194 },
+    water: { minZ: -430, maxZ: -194 },
     districts: [
       { name: 'BERKLEY RIVERFRONT', x: 0, z: -160 },
       { name: 'RIVER MARKET', x: 0, z: -80 },

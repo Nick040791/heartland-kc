@@ -271,7 +271,28 @@ class SoundEngine {
   shoot(kind = 'pistol') {
     if (!this.ctx) return;
     const pitchVar = 0.96 + Math.random() * 0.08;
-    if (kind === 'rifle') {
+    if (kind === 'shotgun') {
+      /* 12G Pump Shotgun: Thunderous low-mid boom + wide buckshot blast + pump-action rack! */
+      this._noise(0.08, 2200 * pitchVar, 0.42, 'highpass', 0, 0.9, 0.65);
+      this._noise(0.28, 720 * pitchVar, 0.38, 'bandpass', 0.002, 0.9, 0.85);
+      this._noise(0.45, 220, 0.36, 'lowpass', 0.008, 0.8, 0.95);
+      this._tone(135 * pitchVar, 0.18, 'sawtooth', 0.25, 32, 0, 0.65);
+      this._tone(88 * pitchVar, 0.22, 'triangle', 0.24, 28, 0.004);
+      /* Pump-action forend slide back & forward (cha-chk) */
+      this._noise(0.038, 2600, 0.11, 'bandpass', 0.26, 2.0);
+      this._tone(280, 0.04, 'square', 0.04, 180, 0.26);
+      this._noise(0.038, 3200, 0.12, 'bandpass', 0.36, 2.2);
+      this._tone(360, 0.04, 'square', 0.045, 220, 0.36);
+    } else if (kind === 'sniper') {
+      /* Heartland Heavy Marksman Rifle: Supersonic whip crack + deep 7.62mm cannon boom + long canyon echo */
+      this._noise(0.05, 4200 * pitchVar, 0.44, 'highpass', 0, 1.3, 0.75);
+      this._noise(0.22, 1100 * pitchVar, 0.34, 'bandpass', 0.002, 1.1, 0.9);
+      this._noise(0.42, 260, 0.34, 'lowpass', 0.006, 0.85, 0.95);
+      this._tone(220 * pitchVar, 0.14, 'sawtooth', 0.24, 34, 0, 0.7);
+      this._tone(110 * pitchVar, 0.18, 'triangle', 0.22, 30, 0.003);
+      this._noise(0.03, 4600, 0.12, 'bandpass', 0.045, 2.4);
+      this._shellCasing(0.28);
+    } else if (kind === 'rifle') {
       /* Vector Carbine: High-velocity crack + punchy chamber thump + bolt clack + canyon echo */
       this._noise(0.045, 3400 * pitchVar, 0.34, 'highpass', 0, 1.1, 0.45);
       this._noise(0.13, 1350 * pitchVar, 0.28, 'bandpass', 0.003, 1.2, 0.65);
@@ -292,6 +313,19 @@ class SoundEngine {
       this._noise(0.026, 3800, 0.1, 'bandpass', 0.036, 2.0);
       this._shellCasing(0.23 + Math.random() * 0.05);
     }
+  }
+
+  grenadeThrow() {
+    if (!this.ctx) return;
+    /* Pin pull metallic ring + arm whoosh */
+    this._tone(3800, 0.045, 'sine', 0.05, 5200);
+    this._noise(0.14, 650, 0.09, 'bandpass', 0.04, 1.1);
+  }
+
+  grenadeBounce() {
+    if (!this.ctx) return;
+    this._tone(1850, 0.035, 'triangle', 0.045, 1100, 0, 0.15);
+    this._noise(0.025, 2800, 0.04, 'bandpass');
   }
 
   dryFire() {
