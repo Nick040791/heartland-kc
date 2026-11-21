@@ -219,6 +219,9 @@ const planes = [];
 const boats = [];
 const peds = [];
 const pedBubbles = [];
+const interiors = [];
+let activeInterior = null;
+let interiorReturnPos = null;
 const cops = [];
 const thugs = [];
 const keys = Object.create(null);
@@ -234,8 +237,8 @@ const G = {
 };
 
 const WEAPONS = [
-  { name: '9MM PISTOL', slot: '01', mag: 12, damage: 28, rate: 0.17, spread: 0.012, range: 105, recoil: 0.014, reload: 1.25, sound: 'pistol' },
-  { name: 'VECTOR CARBINE', slot: '02', mag: 24, damage: 34, rate: 0.095, spread: 0.0075, range: 165, recoil: 0.009, reload: 1.65, sound: 'rifle' }
+  { name: '9MM PISTOL', slot: '01', mag: 12, damage: 28, rate: 0.17, spread: 0.012, adsSpread: 0.004, moveSpread: 0.025, range: 105, falloff: 0.6, recoil: 0.014, recoilH: 0.006, reload: 1.25, sound: 'pistol', headMult: 2.4 },
+  { name: 'VECTOR CARBINE', slot: '02', mag: 24, damage: 34, rate: 0.095, spread: 0.0075, adsSpread: 0.002, moveSpread: 0.018, range: 165, falloff: 0.75, recoil: 0.009, recoilH: 0.004, reload: 1.65, sound: 'rifle', headMult: 2.6 }
 ];
 
 const ZOOM_LEVELS = [1.25, 2.0, 3.2];
@@ -3261,8 +3264,10 @@ function tryShoot() {
   /* Crouch and ADS significantly tighten spread and recoil */
   const adsMult = lerp(1.0, 0.35, player.adsBlend);
   const crouchMult = player.crouching ? 0.65 : 1.0;
+  const speed = Math.hypot(player.vel.x, player.vel.z);
+  const moveMult = 1 + clamp(speed / 5.2, 0, 1) * 1.6;
   const effRecoil = w.recoil * adsMult * crouchMult;
-  const effSpread = w.spread * adsMult * crouchMult;
+  const effSpread = (w.spread * adsMult * crouchMult) * (activeVehicle ? 1.4 : moveMult);
 
   state.recoilPitch += effRecoil + rand(0, 0.004);
   state.recoilYaw += rand(-0.004, 0.004) * adsMult;
@@ -3291,7 +3296,10 @@ function tryShoot() {
     if (h.object.userData.actor) {
       const actor = h.object.userData.actor;
       const head = h.object.userData.part === 'head';
-      damageActor(actor, w.damage * (head ? 2.3 : 1), h.point, head);
+      const dist = origin.distanceTo(h.point);
+      const falloff = clamp(1 - (dist / w.range) * (1 - (w.falloff || 0.6)), w.falloff || 0.6, 1);
+      const dmg = w.damage * (head ? (w.headMult || 2.4) : 1) * falloff;
+      damageActor(actor, dmg, h.point, head);
     } else if (h.object.userData.car) {
       const hitCar = h.object.userData.car;
       spawnParticles(h.point.x, h.point.y, h.point.z, 0xffcf7a, 5, 3, 0.25, 8);
@@ -3471,6 +3479,160 @@ function spawnCityPickups() {
   for (const s of spots) {
     if (!collidesCircle(s.x, s.z, 0.4)) spawnWorldPickup(s.x, s.z, s.kind, true);
   }
+}
+
+/* ============================================================
+   Building Interiors (enterable rooms)
+   ============================================================ */
+const INTERIOR_ORIGIN = { x: 5000, z: 5000 };
+
+function buildInterior(name, theme = 'apartment') {
+  const group = new THREE.Group();
+  group.visible = false;
+  const floorMat = new THREE.MeshStandardMaterial({ color: theme === 'shop' ? 0x3a3a42 : theme === 'warehouse' ? 0x2a2a30 : 0x4a3a30, roughness: 0.9 });
+  const wallMat = new THREE.MeshStandardMaterial({ color: theme === 'shop' ? 0x5a5a62 : theme === 'warehouse' ? 0x3a3a42 : 0x6a5a4a, roughness: 0.85 });
+  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x222228, roughness: 0.9 });
+  const W = 12, D = 14, H = 3.2;
+  /* Floor */
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(0, 0, 0);
+  floor.receiveShadow = true;
+  group.add(floor);
+  /* Ceiling */
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), ceilMat);
+  ceil.rotation.x = Math.PI / 2;
+  ceil.position.set(0, H, 0);
+  group.add(ceil);
+  /* Walls */
+  const wallN = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.2), wallMat);
+  wallN.position.set(0, H / 2, -D / 2);
+  group.add(wallN);
+  const wallS = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.2), wallMat);
+  wallS.position.set(0, H / 2, D / 2);
+  group.add(wallS);
+  const wallE = new THREE.Mesh(new THREE.BoxGeometry(0.2, H, D), wallMat);
+  wallE.position.set(W / 2, H / 2, 0);
+  group.add(wallE);
+  const wallW = new THREE.Mesh(new THREE.BoxGeometry(0.2, H, D), wallMat);
+  wallW.position.set(-W / 2, H / 2, 0);
+  group.add(wallW);
+  /* Doorway cutout in south wall (visual only) */
+  const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.4, 0.25), new THREE.MeshStandardMaterial({ color: 0x2a1a12, roughness: 0.7 }));
+  doorFrame.position.set(0, 1.2, D / 2 - 0.05);
+  group.add(doorFrame);
+
+  /* Furniture based on theme */
+  if (theme === 'shop') {
+    /* Gun counter */
+    const counter = new THREE.Mesh(new THREE.BoxGeometry(6, 1.0, 1.2), new THREE.MeshStandardMaterial({ color: 0x2a2218, roughness: 0.6 }));
+    counter.position.set(0, 0.5, -4);
+    group.add(counter);
+    /* Display cases */
+    for (const ox of [-4, 4]) {
+      const c = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.6, 0.8), new THREE.MeshStandardMaterial({ color: 0x1a1a22, roughness: 0.4, metalness: 0.6 }));
+      c.position.set(ox, 0.8, -5.5);
+      group.add(c);
+    }
+    /* Shelves */
+    const shelf = new THREE.Mesh(new THREE.BoxGeometry(10, 2.2, 0.3), new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.7 }));
+    shelf.position.set(0, 1.1, -6.5);
+    group.add(shelf);
+  } else if (theme === 'warehouse') {
+    /* Crates */
+    for (let i = 0; i < 6; i++) {
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: KC.pick([0x5a4a30, 0x4a3a28, 0x6a5a38]), roughness: 0.9 }));
+      crate.position.set(-4 + (i % 3) * 3.5, 0.8, -4 + Math.floor(i / 3) * 3.5);
+      crate.rotation.y = rand(0, 0.5);
+      group.add(crate);
+    }
+    /* Forklift */
+    const fl = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.2, 2.0), new THREE.MeshStandardMaterial({ color: 0xd98a26, roughness: 0.5 }));
+    fl.position.set(4, 0.6, 4);
+    group.add(fl);
+  } else {
+    /* Apartment: couch, table, bed */
+    const couch = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.9, 1.2), new THREE.MeshStandardMaterial({ color: 0x3b4a6b, roughness: 0.85 }));
+    couch.position.set(-3, 0.45, -4);
+    group.add(couch);
+    const table = new THREE.Mesh(new THREE.BoxGeometry(2, 0.1, 1.2), new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.7 }));
+    table.position.set(2, 0.6, -2);
+    group.add(table);
+    const bed = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.6, 3.4), new THREE.MeshStandardMaterial({ color: 0x8a7a6a, roughness: 0.9 }));
+    bed.position.set(4, 0.3, 4);
+    group.add(bed);
+    const tv = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.4, 0.15), new THREE.MeshStandardMaterial({ color: 0x111118, roughness: 0.3, metalness: 0.5 }));
+    tv.position.set(-4, 1.6, -6.5);
+    group.add(tv);
+  }
+  /* Light */
+  const light = new THREE.PointLight(0xfff0d0, 1.6, 18, 2);
+  light.position.set(0, 2.8, 0);
+  group.add(light);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 4), new THREE.MeshBasicMaterial({ color: 0xfff0d0, toneMapped: false }));
+  bulb.position.set(0, 2.9, 0);
+  group.add(bulb);
+
+  group.position.set(INTERIOR_ORIGIN.x, 0, INTERIOR_ORIGIN.z);
+  scene.add(group);
+  group.visible = false;
+  return group;
+}
+
+const interiorDoors = [];
+function spawnInteriors() {
+  interiors.length = 0;
+  interiorDoors.length = 0;
+  const defs = [
+    { name: 'Gun Shop Interior', theme: 'shop', door: { x: -6.5, z: 24.5 } },
+    { name: 'Warehouse Interior', theme: 'warehouse', door: { x: 92, z: 60 } },
+    { name: 'Apartment Interior', theme: 'apartment', door: { x: -8, z: -54 } }
+  ];
+  for (let i = 0; i < defs.length; i++) {
+    const d = defs[i];
+    const g = buildInterior(d.name, d.theme);
+    g.position.set(INTERIOR_ORIGIN.x + i * 30, 0, INTERIOR_ORIGIN.z);
+    interiors.push({ group: g, name: d.name, theme: d.theme, origin: { x: g.position.x, z: g.position.z }, door: d.door });
+    interiorDoors.push({ x: d.door.x, z: d.door.z, interiorIndex: i });
+  }
+}
+
+function findNearestInteriorDoor() {
+  if (activeVehicle || !interiorDoors.length) return null;
+  let best = null, bestD = 2.6;
+  for (const d of interiorDoors) {
+    const dd = dist2(player.pos.x, player.pos.z, d.x, d.z);
+    if (dd < bestD) { bestD = dd; best = d; }
+  }
+  return best;
+}
+
+function enterInterior(door) {
+  if (!door || activeInterior !== null) return;
+  const idx = door.interiorIndex;
+  const interior = interiors[idx];
+  if (!interior) return;
+  interiorReturnPos = { x: player.pos.x, z: player.pos.z, yaw: player.yaw };
+  activeInterior = interior;
+  interior.group.visible = true;
+  player.pos.set(interior.origin.x, 0, interior.origin.z + 4);
+  player.yaw = Math.PI;
+  G.sound.ui();
+  notify('INTERIOR', 'ENTERED ' + interior.name.toUpperCase(), '');
+  updateHUD();
+}
+
+function exitInterior() {
+  if (!activeInterior) return;
+  activeInterior.group.visible = false;
+  if (interiorReturnPos) {
+    player.pos.set(interiorReturnPos.x, 0, interiorReturnPos.z);
+    player.yaw = interiorReturnPos.yaw;
+  }
+  activeInterior = null;
+  interiorReturnPos = null;
+  G.sound.ui();
+  updateHUD();
 }
 
 function updateWorldPickups(dt) {
@@ -5607,8 +5769,9 @@ function updateHUD() {
   const playing = G.mode === 'playing';
   const missionNear = playing && !activeVehicle && state.contract.stage === 'travel' &&
     !!state.contract.marker && contractDistance() < 7;
-  const vendorCart = playing && !activeVehicle && !missionNear ? findNearestVendorCart() : null;
-  const shop = playing && !activeVehicle && !missionNear ? findNearestShop() : null;
+  const vendorCart = playing && !activeVehicle && !missionNear && !activeInterior ? findNearestVendorCart() : null;
+  const shop = playing && !activeVehicle && !missionNear && !activeInterior ? findNearestShop() : null;
+  const door = playing && !activeVehicle && !activeInterior ? findNearestInteriorDoor() : null;
   const carDist = nearestCar ? dist2(player.pos.x, player.pos.z, nearestCar.x, nearestCar.z) : 999;
   const cartDist = vendorCart ? dist2(player.pos.x, player.pos.z, vendorCart.x, vendorCart.z) : 999;
   const shopDist = shop ? dist2(player.pos.x, player.pos.z, shop.x, shop.z) : 999;
@@ -5618,9 +5781,12 @@ function updateHUD() {
   const missionPrompt = $('mission-prompt');
   const vehiclePrompt = $('vehicle-prompt');
   if (missionPrompt) missionPrompt.classList.toggle('hidden', !missionNear);
+  const preferDoor = !!door && !preferShop && !preferVendor && !carNear;
   if (vehiclePrompt) {
-    vehiclePrompt.classList.toggle('hidden', !((carNear || preferVendor || preferShop) && !missionNear));
-    if (preferShop) {
+    vehiclePrompt.classList.toggle('hidden', !((carNear || preferVendor || preferShop || preferDoor) && !missionNear));
+    if (preferDoor) {
+      vehiclePrompt.innerHTML = '<span class="key">E</span> ENTER BUILDING';
+    } else if (preferShop) {
       vehiclePrompt.innerHTML = '<span class="key">E</span> ' + shop.name + ' (' + shop.type.toUpperCase() + ')';
     } else if (preferVendor) {
       vehiclePrompt.innerHTML = '<span class="key">E</span> ' + vendorCart.name;
@@ -6006,12 +6172,21 @@ function toggleMute() {
 
 function interact() {
   if (G.mode !== 'playing') return;
+  if (activeInterior) {
+    exitInterior();
+    return;
+  }
   if (activeVehicle) {
     exitCar();
     return;
   }
   if (state.contract.stage === 'travel' && state.contract.marker && contractDistance() < 7) {
     startFight();
+    return;
+  }
+  const door = findNearestInteriorDoor();
+  if (door) {
+    enterInterior(door);
     return;
   }
   const car = findNearestCar();
@@ -6608,6 +6783,7 @@ function init() {
   spawnPeds(82);
   spawnGangsters(8);
   spawnCityPickups();
+  spawnInteriors();
   buildMinimap();
   if (KC.multiplayer) KC.multiplayer.init(scene, G.sound);
   const spawn = findSafeSpawn();
@@ -6665,6 +6841,9 @@ window.HEARTLAND = {
   get city() { return city; },
   get activeVehicle() { return activeVehicle; },
   get nearestCar() { return nearestCar; },
+  get interiors() { return interiors; },
+  get interiorDoors() { return interiorDoors; },
+  get activeInterior() { return activeInterior; },
   get helis() { return helis; },
   get planes() { return planes; },
   get boats() { return boats; },

@@ -369,6 +369,51 @@ KC.buildProps = function (city, blockData) {
   addVendorCart(-36.5, 67.5, 0, 'WESTPORT TACOS & BBQ $25', '#ffb13b');
   addVendorCart(52.5, 97.5, 0, 'JACK STACK SMOKE CART $25', '#ffc77a');
 
+  /* ---------------- Extra world detail: fountains, statues, bike racks, monuments ---------------- */
+  function addBikeRack(x, z, ry = 0) {
+    const g = new THREE.Group();
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.4, 6), railMat);
+    bar.rotation.z = Math.PI / 2;
+    bar.position.y = 0.85;
+    g.add(bar);
+    for (let i = -1; i <= 1; i++) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.9, 5), railMat);
+      post.position.set(i * 0.9, 0.45, 0);
+      g.add(post);
+    }
+    g.position.set(x, 0.14, z);
+    g.rotation.y = ry;
+    scene.add(g);
+    registerCullItem(g, x, z, 115);
+    addCollider(x, z, 2.4, 0.4, 1.0, 'prop');
+  }
+  function addStatue(x, z, ry = 0) {
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.6, 2.2), materials.stoneMat || materials.curbMat);
+    base.position.y = 0.3;
+    const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, 1.6, 8), materials.paleStoneMat || materials.stoneMat);
+    ped.position.y = 1.4;
+    const fig = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.8, 0.5), materials.stoneMat || materials.curbMat);
+    fig.position.set(0, 2.7, 0);
+    g.add(base, ped, fig);
+    g.position.set(x, 0.14, z);
+    g.rotation.y = ry;
+    scene.add(g);
+    registerCullItem(g, x, z, 140);
+    addCollider(x, z, 2.2, 2.2, 3.6, 'prop');
+  }
+  /* KC Scout / WWI Memorial style monument near Liberty Memorial */
+  addStatue(-40, 72, 0);
+  addStatue(40, -4, 0);
+  /* Bike racks along main streets */
+  for (const [bx, bz, bry] of [[-14, 12, 0], [14, 12, 0], [30, 34, Math.PI/2], [-30, 34, Math.PI/2], [90, 58, 0], [-90, 58, 0]]) {
+    addBikeRack(bx, bz, bry);
+  }
+  /* Extra billboards */
+  addBillboard('KC STREETCAR // FREE RIDES', '#57e6c2', -22, 7.5, -14, 0.4);
+  addBillboard('COUNTRY CLUB PLAZA', '#ffb13b', -33, 8.5, 140, 0.2);
+  addBillboard('18TH & VINE JAZZ', '#ff5f8f', 93, 8.5, 46, -0.3);
+
   /* ---------------- Buyable Shops (Guns, Armor, Ammo) ---------------- */
   function addShop(x, z, ry, name, type, tagColor) {
     const g = new THREE.Group();
