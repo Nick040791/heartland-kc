@@ -28,6 +28,8 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 const PS1_SCALE = 3;
 renderer.setPixelRatio(1);
 renderer.setSize(Math.floor(window.innerWidth / PS1_SCALE), Math.floor(window.innerHeight / PS1_SCALE));
+renderer.domElement.style.width = '100%';
+renderer.domElement.style.height = '100%';
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -6788,6 +6790,8 @@ function wireUI() {
   window.addEventListener('resize', () => {
     renderer.setPixelRatio(1);
     renderer.setSize(Math.floor(window.innerWidth / PS1_SCALE), Math.floor(window.innerHeight / PS1_SCALE));
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     weaponCamera.aspect = window.innerWidth / window.innerHeight;
