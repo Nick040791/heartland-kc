@@ -402,6 +402,17 @@
     </section>
 
     <div id="pointer-hint" class="pointer-hint hidden">CLICK TO CAPTURE MOUSE</div>
+
+    <!-- Battlefield spawn selection -->
+    <section id="spawn-select" class="screen overlay-screen hidden" style="z-index: 47;">
+      <div class="overlay-panel" style="width: min(420px, 92vw);">
+        <div class="overlay-kicker">BATTLEFIELD // CHOOSE SPAWN</div>
+        <h2>SPAWN POINT</h2>
+        <div class="panel-rule"></div>
+        <div id="spawn-list" style="display:grid;gap:8px;margin:12px 0;"></div>
+        <div class="overlay-note">Select a base your team holds to deploy.</div>
+      </div>
+    </section>
   </div>
 
   <script src="vendor/three.min.js"></script>

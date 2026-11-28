@@ -1110,12 +1110,12 @@ KC.buildBattlefield = function (scene) {
 
   /* Conquest zones */
   const zoneDefs = [
-    { name: 'ALPHA', x: -120, z: -120, color: 0x4a90d9 },
-    { name: 'BRAVO', x: 120, z: -120, color: 0x4a90d9 },
+    { name: 'ALPHA', x: -120, z: -180, color: 0xd94a4a },
+    { name: 'BRAVO', x: 120, z: -120, color: 0x888888 },
     { name: 'CHARLIE', x: 0, z: 0, color: 0x888888 },
-    { name: 'DELTA', x: -120, z: 120, color: 0xd94a4a },
-    { name: 'ECHO', x: 120, z: 120, color: 0xd94a4a },
-    { name: 'FOXTROT', x: 0, z: -180, color: 0x888888 }
+    { name: 'DELTA', x: -120, z: 120, color: 0x888888 },
+    { name: 'ECHO', x: 120, z: 120, color: 0x4a90d9 },
+    { name: 'FOXTROT', x: 0, z: 180, color: 0x888888 }
   ];
   for (const z of zoneDefs) {
     const zone = { name: z.name, x: z.x, z: z.z, radius: 18, owner: z.color === 0x4a90d9 ? 'player' : z.color === 0xd94a4a ? 'enemy' : 'neutral', progress: 0, capturing: null, mesh: null, flag: null };
@@ -1172,8 +1172,8 @@ KC.buildBattlefield = function (scene) {
 
   /* Spawn points (player team on south, enemy on north) */
   city.spawnPoints = {
-    player: [{ x: 0, z: 180 }, { x: -40, z: 160 }, { x: 40, z: 160 }],
-    enemy: [{ x: 0, z: -180 }, { x: -40, z: -160 }, { x: 40, z: -160 }]
+    player: [{ x: 120, z: 120 }, { x: 100, z: 100 }, { x: 140, z: 100 }],
+    enemy: [{ x: -120, z: -180 }, { x: -100, z: -160 }, { x: -140, z: -160 }]
   };
 
   /* Enemy soldiers (thugs) defending north zones */

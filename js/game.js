@@ -4747,6 +4747,7 @@ function buildRandomEventBeacon(x, z, colorHex) {
 
 function triggerRandomEvent(preferredKind = null) {
   if (!city) return null;
+  if (G.gameMode === 'bf') return null;
   clearRandomEvent(true);
 
   let idx = randomEvent.lastIdx;
@@ -4908,6 +4909,7 @@ function completeRandomEvent(reason = 'COMPLETED') {
 
 function updateRandomEvent(dt) {
   if (G.mode !== 'playing') return;
+  if (G.gameMode === 'bf') return;
 
   if (!randomEvent.active) {
     randomEvent.cooldown -= dt;
@@ -6174,21 +6176,35 @@ function startGame() {
   /* Apply the configured Per-Game Day/Night Cycle & Weather settings for this game session */
   applyWorldSettings(null, true, true);
 
-  G.mode = 'playing';
   camera.fov = 75;
   camera.updateProjectionMatrix();
-  if (G.gameMode !== 'bf') startTravel('Kauffman Center');
-  randomEvent.cooldown = 4.5;
-  updateWantedUI();
-  updateClock();
-  updateArea();
-  updateHUD();
-  drawMinimap();
-  updateWeaponView(0);
-  if (KC.multiplayer) KC.multiplayer.updateSessionUI();
-  showBanner('WELCOME TO KANSAS CITY', 'THE CITY IS YOURS');
-  notify('KINGDOM', 'CONTRACT READY // KAUFFMAN CENTER', 'money');
-  G.sound.ui();
+  if (G.gameMode !== 'bf') {
+    G.mode = 'playing';
+    startTravel('Kauffman Center');
+    randomEvent.cooldown = 4.5;
+    updateWantedUI();
+    updateClock();
+    updateArea();
+    updateHUD();
+    drawMinimap();
+    updateWeaponView(0);
+    if (KC.multiplayer) KC.multiplayer.updateSessionUI();
+    showBanner('WELCOME TO KANSAS CITY', 'THE CITY IS YOURS');
+    notify('KINGDOM', 'CONTRACT READY // KAUFFMAN CENTER', 'money');
+    G.sound.ui();
+  } else {
+    /* Battlefield: spawn selection */
+    G.mode = 'playing';
+    updateWantedUI();
+    updateClock();
+    updateArea();
+    updateHUD();
+    drawMinimap();
+    updateWeaponView(0);
+    if (KC.multiplayer) KC.multiplayer.updateSessionUI();
+    showSpawnSelect((base) => spawnAtBase(base));
+    showBanner('BATTLEFIELD', 'SELECT SPAWN POINT');
+  }
 }
 
 function die() {
@@ -6249,11 +6265,6 @@ function respawn() {
   } else if (state.contract.stage === 'travel' && !contractMarker) {
     createContractMarker(state.contract.location);
   }
-  let spawn = findSafeSpawn();
-  if (G.gameMode === 'bf' && city.spawnPoints) {
-    spawn = city.spawnPoints.player[Math.floor(Math.random() * city.spawnPoints.player.length)];
-  }
-  resetPlayer(spawn);
   state.health = 100;
   state.armor = 50;
   state.damageTimer = 99;
@@ -6270,7 +6281,6 @@ function respawn() {
   state.muzzleTimer = 0;
   pointer.firing = false;
   pointer.aiming = false;
-  G.mode = 'playing';
   $('damage-flash').style.opacity = '0';
   $('low-health').classList.remove('active');
   $('death-screen').classList.add('hidden');
@@ -6278,12 +6288,20 @@ function respawn() {
   $('start-screen').classList.add('hidden');
   updateWantedUI();
   updateHUD();
-  updateObjective();
   updateArea();
   drawMinimap();
   updateWeaponView(0);
-  showBanner('BACK IN THE GAME', 'THE CITY DOES NOT WAIT');
-  notify('MEDICAL', 'PATCHED UP // ' + state.contract.location.toUpperCase());
+  if (G.gameMode === 'bf') {
+    showSpawnSelect((base) => spawnAtBase(base));
+    showBanner('RESPAWN', 'CHOOSE DEPLOYMENT');
+  } else {
+    let spawn = findSafeSpawn();
+    resetPlayer(spawn);
+    G.mode = 'playing';
+    updateObjective();
+    showBanner('BACK IN THE GAME', 'THE CITY DOES NOT WAIT');
+    notify('MEDICAL', 'PATCHED UP // ' + state.contract.location.toUpperCase());
+  }
 }
 
 function pauseGame() {
@@ -6313,6 +6331,74 @@ function resumeGame() {
   G.sound.setMuted(G.muted);
   G.sound.ui();
   updateHUD();
+  requestLock();
+}
+
+/* ============================================================
+   Battlefield spawn selection
+   ============================================================ */
+function getOwnedSpawnBases() {
+  if (G.gameMode !== 'bf' || !city || !city.spawnPoints) return [];
+  const bases = [];
+  for (const z of bfZones) {
+    if (z.owner === 'player') {
+      bases.push({ name: z.name, x: z.x, z: z.z });
+    }
+  }
+  if (bases.length === 0 && city.spawnPoints.player && city.spawnPoints.player.length) {
+    bases.push({ name: 'HQ', x: city.spawnPoints.player[0].x, z: city.spawnPoints.player[0].z });
+  }
+  return bases;
+}
+
+function showSpawnSelect(onChoose) {
+  const screen = $('spawn-select');
+  const list = $('spawn-list');
+  if (!screen || !list) { if (onChoose) onChoose(getOwnedSpawnBases()[0]); return; }
+  list.innerHTML = '';
+  const bases = getOwnedSpawnBases();
+  for (const b of bases) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-secondary';
+    btn.style.width = '100%';
+    btn.textContent = b.name + '  (' + Math.round(b.x) + ', ' + Math.round(b.z) + ')';
+    btn.addEventListener('click', () => {
+      hideSpawnSelect();
+      if (onChoose) onChoose(b);
+    });
+    list.appendChild(btn);
+  }
+  screen.classList.remove('hidden');
+}
+
+function hideSpawnSelect() {
+  const screen = $('spawn-select');
+  if (screen) screen.classList.add('hidden');
+}
+
+function spawnAtBase(base) {
+  if (!base) return;
+  player.pos.set(base.x, 0, base.z);
+  player.yaw = 0; player.pitch = 0; player.vel.set(0, 0, 0);
+  player.vy = 0; player.onGround = true;
+  state.health = 100; state.armor = 50; state.damageTimer = 99;
+  state.damageFlash = 0;
+  state.firing = false; pointer.firing = false;
+  state.reloading = false;
+  state.ammo = [12, 24, 8, 5];
+  if (activeVehicle) { activeVehicle.controlled = false; activeVehicle.group.visible = true; activeVehicle = null; }
+  G.mode = 'playing';
+  $('spawn-select').classList.add('hidden');
+  $('start-screen').classList.add('hidden');
+  $('death-screen').classList.add('hidden');
+  $('pause-screen').classList.add('hidden');
+  $('damage-flash').style.opacity = '0';
+  $('low-health').classList.remove('active');
+  camera.fov = 75; camera.updateProjectionMatrix();
+  updateHUD(); updateArea(); updateClock(); drawMinimap();
+  showBanner('DEPLOYED', base.name + ' SECTOR');
+  notify('BATTLEFIELD', 'DEPLOYED TO ' + base.name, 'money');
+  G.sound.ui();
   requestLock();
 }
 
