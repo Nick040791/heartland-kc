@@ -1139,6 +1139,21 @@ KC.buildBattlefield = function (scene) {
   }
   city.zones = city.zones || [];
 
+  /* Attachment pickups */
+  city.attachmentPickups = [];
+  const attTypes = ['scope', 'grip', 'silencer', 'extmag'];
+  const attColors = { scope: 0x4a90d9, grip: 0x57e6c2, silencer: 0x888888, extmag: 0xffb13b };
+  for (let i = 0; i < 20; i++) {
+    const x = KC.rand(-220, 220), z = KC.rand(-220, 220);
+    if (Math.abs(x) < 20 && Math.abs(z) < 20) continue;
+    const type = KC.pick(attTypes);
+    const col = attColors[type];
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.6, metalness: 0.5, roughness: 0.3 }));
+    mesh.position.set(x, 0.8, z);
+    scene.add(mesh);
+    city.attachmentPickups.push({ x, z, type, mesh, picked: false });
+  }
+
   /* Vehicle spawns */
   city.vehicleSpots = [];
   /* Land vehicles */

@@ -225,6 +225,7 @@ const peds = [];
 const pedBubbles = [];
 const interiors = [];
 let activeInterior = null;
+const attachmentPickups = [];
 const bfZones = [];
 let bfScores = { player: 0, enemy: 0 };
 let bfTickets = { player: 200, enemy: 200 };
@@ -253,6 +254,13 @@ const WEAPONS = [
 
 const ZOOM_LEVELS = [1.25, 2.0, 3.2];
 
+const ATTACHMENTS = {
+  scope: { name: 'SCOPE', spreadMult: 0.5, zoomBonus: 1.5, color: 0x4a90d9 },
+  grip: { name: 'GRIP', recoilMult: 0.6, color: 0x57e6c2 },
+  silencer: { name: 'SILENCER', flashHide: true, soundMult: 0.5, color: 0x888888 },
+  extmag: { name: 'EXT MAG', magBonus: 1.5, color: 0xffb13b }
+};
+
 const player = {
   pos: new THREE.Vector3(2, 0, 10),
   vel: new THREE.Vector3(),
@@ -271,6 +279,7 @@ const player = {
   recoilYaw: 0,
   carLookYaw: 0,
   carLookPitch: 0,
+  attachments: [],
   /* New Shooter, Camera & 3P Animation state */
   cameraMode: '1p', // '1p' or '3p'
   crouching: false,
@@ -3340,8 +3349,12 @@ function tryShoot() {
   const crouchMult = player.crouching ? 0.65 : 1.0;
   const speed = Math.hypot(player.vel.x, player.vel.z);
   const moveMult = 1 + clamp(speed / 5.2, 0, 1) * 1.6;
-  const effRecoil = w.recoil * adsMult * crouchMult;
-  const effSpread = (w.spread * adsMult * crouchMult) * (activeVehicle ? 1.4 : moveMult);
+  const hasScope = player.attachments.indexOf('scope') !== -1;
+  const hasGrip = player.attachments.indexOf('grip') !== -1;
+  const recoilMult = hasGrip ? 0.6 : 1.0;
+  const spreadMult = hasScope ? 0.5 : 1.0;
+  const effRecoil = w.recoil * adsMult * crouchMult * recoilMult;
+  const effSpread = (w.spread * adsMult * crouchMult * spreadMult) * (activeVehicle ? 1.4 : moveMult);
 
   state.recoilPitch += effRecoil + rand(0, 0.004);
   state.recoilYaw += rand(-0.004, 0.004) * adsMult;
@@ -3786,6 +3799,45 @@ function findNearestShop() {
     if (d < bestD) { bestD = d; best = s; }
   }
   return best;
+}
+
+function findNearestAttachmentPickup() {
+  if (activeVehicle || !city || !city.attachmentPickups) return null;
+  let best = null, bestD = 2.6;
+  for (const p of city.attachmentPickups) {
+    if (p.picked) continue;
+    const d = dist2(player.pos.x, player.pos.z, p.x, p.z);
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+
+function pickupAttachment(pickup) {
+  if (!pickup || pickup.picked) return;
+  pickup.picked = true;
+  if (pickup.mesh) { pickup.mesh.visible = false; }
+  if (player.attachments.indexOf(pickup.type) === -1) {
+    player.attachments.push(pickup.type);
+    notify('ATTACHMENT', ATTACHMENTS[pickup.type].name + ' ACQUIRED', 'money');
+  } else {
+    notify('ATTACHMENT', ATTACHMENTS[pickup.type].name + ' (SPARE)', '');
+  }
+  G.sound.money();
+  updateHUD();
+}
+
+function updateAttachmentPickups(dt) {
+  if (!city || !city.attachmentPickups) return;
+  for (const p of city.attachmentPickups) {
+    if (p.picked || !p.mesh) continue;
+    p.mesh.rotation.y += dt * 1.8;
+    p.mesh.position.y = 0.8 + Math.sin(gameTime * 2 + p.x) * 0.15;
+  }
+  /* Auto-pickup when close */
+  const near = findNearestAttachmentPickup();
+  if (near && dist2(player.pos.x, player.pos.z, near.x, near.z) < 1.6) {
+    pickupAttachment(near);
+  }
 }
 
 function buyShop(shop) {
@@ -5867,6 +5919,8 @@ function updateHUD() {
     reloadHint.classList.toggle('reloading', state.reloading);
     reloadHint.textContent = state.reloading ? 'RELOADING...' : 'R // RELOAD';
   }
+  const attEl = $('attachments');
+  if (attEl) attEl.textContent = 'ATTACHMENTS: ' + (player.attachments.length ? player.attachments.map((a) => ATTACHMENTS[a].name).join(' · ') : 'NONE');
 
   /* Tactical status pills: Stance, Camera, Flashlight, Zoom, XInput */
   const stanceEl = $('hud-stance');
@@ -6862,6 +6916,7 @@ function loop() {
     updatePeds(dt);
     updatePedBubbles(dt);
     updateVendorBubbles(dt);
+    updateAttachmentPickups(dt);
     if (KC.multiplayer) KC.multiplayer.update(dt, null, state.nightFactor);
     updateEffects(dt);
     updateWorldUpdaters(dt);
@@ -6879,6 +6934,7 @@ function loop() {
     updatePeds(dt);
     updatePedBubbles(dt);
     updateVendorBubbles(dt);
+    updateAttachmentPickups(dt);
     updateCops(dt);
     updateThugs(dt);
     updateWanted(dt);
@@ -7056,6 +7112,11 @@ window.HEARTLAND = {
   completeRandomEvent,
   clearRandomEvent,
   tryShoot,
+  updatePlayer,
+  updateAttachmentPickups,
+  findNearestAttachmentPickup,
+  pickupAttachment,
+  updateBattlefield,
   interact,
   startReload,
   switchWeapon,
