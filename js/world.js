@@ -430,7 +430,9 @@ KC.scaleBoxUV = function (geo, w, h, d, unit = KC.WINDOW_UNIT) {
 };
 
 KC.buildCity = function (scene) {
+  KC.WORLD_LIMIT = 260;
   const city = {
+    gameMode: 'gtb',
     scene,
     colliders: [],
     propColliders: [],
@@ -939,6 +941,300 @@ KC.buildCity = function (scene) {
 
   KC.buildLandmarks(city, blockData);
   KC.buildProps(city, blockData);
+
+  return city;
+};
+
+/* ============================================================
+   BATTLEFIELD MODE — large land/sea/air map with conquest zones
+   ============================================================ */
+KC.buildBattlefield = function (scene) {
+  const city = {
+    gameMode: 'bf',
+    scene,
+    colliders: [],
+    propColliders: [],
+    destructibleProps: [],
+    spatialGrid: new Map(),
+    gridCellSize: 24,
+    rayMeshes: [],
+    blocks: [],
+    landmarks: {},
+    updaters: [],
+    trafficSpots: [],
+    parkedSpots: [],
+    pedSpots: [],
+    signs: [],
+    lampGlows: [],
+    lightPools: [],
+    streetLamps: [],
+    cullItems: [],
+    facadeMats: [],
+    mapData: null,
+    vehicleSpots: [],
+    shops: [],
+    vendorCarts: [],
+    glowTex: null,
+    poolTex: null,
+    water: null,
+    zones: []
+  };
+
+  /* Helpers */
+  function insertColliderToGrid(c) { /* noop for bf (no grid needed) */ }
+  city.insertColliderToGrid = insertColliderToGrid;
+  city.getNearbyColliders = function (x, z, r) { return city.colliders; };
+  function addCollider(x, z, w, d, h = 10, tag = 'building') {
+    const c = { minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, x, z, w, d, h, tag, active: true };
+    city.colliders.push(c);
+    return c;
+  }
+  city.addCollider = addCollider;
+  const addBox = (w, h, d, mat, x, y, z, rotY = 0, opts = {}) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = rotY;
+    mesh.castShadow = opts.cast !== false;
+    mesh.receiveShadow = opts.receive !== false;
+    scene.add(mesh);
+    if (opts.ray) city.rayMeshes.push(mesh);
+    return mesh;
+  };
+  city.addBox = addBox;
+  const addCylinder = (rt, rb, h, seg, mat, x, y, z, opts = {}) => {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
+    mesh.position.set(x, y, z);
+    if (opts.rotY) mesh.rotation.y = opts.rotY;
+    mesh.castShadow = opts.cast !== false;
+    scene.add(mesh);
+    if (opts.ray) city.rayMeshes.push(mesh);
+    return mesh;
+  };
+  city.addCylinder = addCylinder;
+  const addSign = (text, color, x, y, z, rotY, w = 8, h = 2, opts = {}) => {
+    const tex = KC.makeSignTexture(text, color, opts.bg || null);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = rotY;
+    scene.add(mesh);
+    return mesh;
+  };
+  city.addSign = addSign;
+  const glowTex = KC.makeGlowTexture();
+  const poolTex = KC.makeLightPoolTexture();
+  city.glowTex = glowTex;
+  city.poolTex = poolTex;
+  const addGlowSprite = (color, x, y, z, scale, opacity = 0.5) => {
+    const mat = new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const s = new THREE.Sprite(mat);
+    s.position.set(x, y, z);
+    s.scale.set(scale, scale, 1);
+    scene.add(s);
+    return s;
+  };
+  city.addGlowSprite = addGlowSprite;
+  const addLightPool = (x, y, z, color, size, opacity = 0.24) => {
+    const mat = new THREE.MeshBasicMaterial({ map: poolTex, color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x, y, z);
+    scene.add(mesh);
+    return mesh;
+  };
+  city.addLightPool = addLightPool;
+  city.registerCullItem = function () {};
+  city.createBuilding = function () {};
+
+  /* Materials */
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x3a4a30, roughness: 0.95 });
+  const sandMat = new THREE.MeshStandardMaterial({ color: 0xc9b07a, roughness: 0.95 });
+  const waterMat = new THREE.MeshStandardMaterial({ color: 0x1a3a5c, roughness: 0.2, metalness: 0.6, transparent: true, opacity: 0.85 });
+  const concreteMat = new THREE.MeshStandardMaterial({ color: 0x6a6a72, roughness: 0.8, metalness: 0.3 });
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0x2a3a4a, roughness: 0.4, metalness: 0.7 });
+
+  city.materials = { waterTex: null, microBump: null };
+
+  /* Ground (large) */
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.06;
+  ground.receiveShadow = true;
+  scene.add(ground);
+  city.rayMeshes.push(ground);
+
+  /* Sea on the west side */
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(300, 700), waterMat);
+  sea.rotation.x = -Math.PI / 2;
+  sea.position.set(-250, -0.3, 0);
+  scene.add(sea);
+  city.water = sea;
+
+  /* Beach / sand strip */
+  const beach = new THREE.Mesh(new THREE.PlaneGeometry(40, 700), sandMat);
+  beach.rotation.x = -Math.PI / 2;
+  beach.position.set(-80, -0.02, 0);
+  scene.add(beach);
+
+  /* Some hills / elevation via boxes */
+  for (let i = 0; i < 8; i++) {
+    const w = KC.rand(20, 60), h = KC.rand(3, 12), d = KC.rand(20, 60);
+    const x = KC.rand(-120, 120), z = KC.rand(-120, 120);
+    if (Math.abs(x) < 30 && Math.abs(z) < 30) continue;
+    const hill = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), groundMat);
+    hill.position.set(x, h / 2 - 0.1, z);
+    hill.receiveShadow = true;
+    hill.castShadow = true;
+    scene.add(hill);
+    city.rayMeshes.push(hill);
+    addCollider(x, z, w, d, h, 'hill');
+  }
+
+  /* Bunkers / buildings */
+  for (let i = 0; i < 12; i++) {
+    const x = KC.rand(-180, 180), z = KC.rand(-180, 180);
+    if (Math.abs(x) < 40 && Math.abs(z) < 40) continue;
+    const w = KC.rand(8, 16), h = KC.rand(4, 9), d = KC.rand(8, 16);
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), concreteMat);
+    b.position.set(x, h / 2, z);
+    b.castShadow = true;
+    b.receiveShadow = true;
+    scene.add(b);
+    city.rayMeshes.push(b);
+    addCollider(x, z, w, d, h, 'building');
+    /* roof */
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.3, d + 0.4), metalMat);
+    roof.position.set(x, h + 0.15, z);
+    scene.add(roof);
+  }
+
+  /* Conquest zones */
+  const zoneDefs = [
+    { name: 'ALPHA', x: -120, z: -120, color: 0x4a90d9 },
+    { name: 'BRAVO', x: 120, z: -120, color: 0x4a90d9 },
+    { name: 'CHARLIE', x: 0, z: 0, color: 0x888888 },
+    { name: 'DELTA', x: -120, z: 120, color: 0xd94a4a },
+    { name: 'ECHO', x: 120, z: 120, color: 0xd94a4a },
+    { name: 'FOXTROT', x: 0, z: -180, color: 0x888888 }
+  ];
+  for (const z of zoneDefs) {
+    const zone = { name: z.name, x: z.x, z: z.z, radius: 18, owner: z.color === 0x4a90d9 ? 'player' : z.color === 0xd94a4a ? 'enemy' : 'neutral', progress: 0, capturing: null, mesh: null, flag: null };
+    /* Zone circle on ground */
+    const circle = new THREE.Mesh(new THREE.CircleGeometry(zone.radius, 32), new THREE.MeshBasicMaterial({ color: z.color, transparent: true, opacity: 0.25, side: THREE.DoubleSide, toneMapped: false }));
+    circle.rotation.x = -Math.PI / 2;
+    circle.position.set(z.x, 0.05, z.z);
+    scene.add(circle);
+    /* Flag pole */
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 6, 6), metalMat);
+    pole.position.set(z.x, 3, z.z);
+    scene.add(pole);
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(3, 2), new THREE.MeshBasicMaterial({ color: z.color, side: THREE.DoubleSide, toneMapped: false }));
+    flag.position.set(z.x + 1.6, 5.2, z.z);
+    scene.add(flag);
+    zone.mesh = circle;
+    zone.flag = flag;
+    zone.flagColor = z.color;
+    city.zones.push(zone);
+    addCollider(z.x, z.z, zone.radius * 2, zone.radius * 2, 1, 'zone');
+  }
+  city.zones = city.zones || [];
+
+  /* Vehicle spawns */
+  city.vehicleSpots = [];
+  /* Land vehicles */
+  city.vehicleSpots.push({ type: 'car', x: -60, z: -60, heading: 0, color: 0x2b4b7a, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'car', x: 60, z: -60, heading: 0, color: 0xa32b2b, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'car', x: -60, z: 60, heading: 0, color: 0x3b6b56, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'car', x: 60, z: 60, heading: 0, color: 0x8d7c3c, kind: 'parked' });
+  /* Helis */
+  city.vehicleSpots.push({ type: 'heli', x: -180, z: 0, heading: 0, color: 0x1a3a5c, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'heli', x: 180, z: 0, heading: Math.PI, color: 0x2b4b7a, kind: 'parked' });
+  /* Planes */
+  city.vehicleSpots.push({ type: 'plane', x: 0, z: -200, heading: 0, color: 0xd8d0c0, kind: 'parked' });
+  /* Boats */
+  city.vehicleSpots.push({ type: 'boat', x: -230, z: 0, heading: 0, color: 0xd8d0c0, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'boat', x: -230, z: 80, heading: 0, color: 0x2b4b7a, kind: 'parked' });
+
+  /* Spawn points (player team on south, enemy on north) */
+  city.spawnPoints = {
+    player: [{ x: 0, z: 180 }, { x: -40, z: 160 }, { x: 40, z: 160 }],
+    enemy: [{ x: 0, z: -180 }, { x: -40, z: -160 }, { x: 40, z: -160 }]
+  };
+
+  /* Enemy soldiers (thugs) defending north zones */
+  city.enemySpawns = city.spawnPoints.enemy.slice();
+
+  /* Map data for minimap */
+  city.mapData = {
+    bounds: 260,
+    lines: [],
+    blocks: [],
+    water: { minZ: -350, maxZ: -200 },
+    districts: [
+      { name: 'SECTOR ALPHA', x: -120, z: -120 },
+      { name: 'SECTOR BRAVO', x: 120, z: -120 },
+      { name: 'SECTOR CHARLIE', x: 0, z: 0 },
+      { name: 'SECTOR DELTA', x: -120, z: 120 },
+      { name: 'SECTOR ECHO', x: 120, z: 120 }
+    ],
+    landmarkLabels: zoneDefs.map((z) => ({ label: z.name, x: z.x, z: z.z }))
+  };
+
+  /* Store landmarks for minimap */
+  city.landmarks = {};
+  for (const z of zoneDefs) {
+    city.landmarks[z.name] = { x: z.x, z: z.z, marker: { x: z.x, z: z.z }, label: z.name };
+  }
+
+  /* Extra battlefield detail: trees, crates, barriers */
+  const treeMat = new THREE.MeshStandardMaterial({ color: 0x2a4a2a, roughness: 0.9, flatShading: true });
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.9 });
+  for (let i = 0; i < 60; i++) {
+    const x = KC.rand(-220, 220), z = KC.rand(-220, 220);
+    if (Math.abs(x) < 30 && Math.abs(z) < 30) continue;
+    if (x < -60) continue; /* keep sea side clear */
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, KC.rand(2, 4), 6), trunkMat);
+    trunk.position.set(x, 1.5, z);
+    scene.add(trunk);
+    const canopy = new THREE.Mesh(new THREE.DodecahedronGeometry(KC.rand(2, 4), 0), treeMat);
+    canopy.position.set(x, KC.rand(4, 7), z);
+    scene.add(canopy);
+  }
+  for (let i = 0; i < 25; i++) {
+    const x = KC.rand(-200, 200), z = KC.rand(-200, 200);
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 1.4), concreteMat);
+    crate.position.set(x, 0.7, z);
+    crate.rotation.y = KC.rand(0, Math.PI);
+    scene.add(crate);
+    addCollider(x, z, 1.4, 1.4, 1.4, 'prop');
+  }
+  for (let i = 0; i < 15; i++) {
+    const x = KC.rand(-200, 200), z = KC.rand(-200, 200);
+    const barrier = new THREE.Mesh(new THREE.BoxGeometry(KC.rand(4, 8), 0.6, 0.4), concreteMat);
+    barrier.position.set(x, 0.3, z);
+    barrier.rotation.y = KC.rand(0, Math.PI);
+    scene.add(barrier);
+    addCollider(x, z, 6, 0.4, 0.6, 'prop');
+  }
+
+  /* Lights */
+  const sun = new THREE.DirectionalLight(0xfff0d0, 1.6);
+  sun.position.set(80, 120, 60);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = -200; sun.shadow.camera.right = 200;
+  sun.shadow.camera.top = 200; sun.shadow.camera.bottom = -200;
+  sun.shadow.camera.near = 5; sun.shadow.camera.far = 400;
+  scene.add(sun);
+  scene.add(sun.target);
+  const hemi = new THREE.HemisphereLight(0x88aaff, 0x223322, 0.7);
+  scene.add(hemi);
+  const amb = new THREE.AmbientLight(0x445566, 0.5);
+  scene.add(amb);
+
+  /* Sky */
+  scene.background = new THREE.Color(0x87ceeb);
+  scene.fog = new THREE.FogExp2(0x87ceeb, 0.0015);
 
   return city;
 };

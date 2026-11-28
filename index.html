@@ -10,6 +10,7 @@
 <body>
   <div id="app">
     <div id="viewport" aria-hidden="true"></div>
+    <div id="ps1-dither" aria-hidden="true"></div>
 
     <div id="fx" aria-hidden="true">
       <div id="vignette"></div>
@@ -120,7 +121,10 @@
           <div class="speed-row"><span id="speed">0</span><span class="mph">MPH</span></div>
           <div class="speed-bar"><div id="speed-fill"></div></div>
           <div class="vehicle-name" id="vehicle-name">VULCAN GT</div>
-          <div class="vehicle-exit"><span class="key">E</span> EXIT · <span class="key">SHIFT</span> TURBO · <span class="key">SPACE</span> DRIFT</div>
+          <div class="vehicle-dash" id="vehicle-dash" style="margin-top:6px;padding:4px 8px;background:rgba(0,0,0,0.55);border:1px solid rgba(242,232,213,0.2);font-size:10px;letter-spacing:0.12em;">
+            <span>HDG <b id="dash-hdg">0</b></span> · <span>ALT <b id="dash-alt">0</b></span> · <span>SPD <b id="dash-spd">0</b></span>
+          </div>
+          <div class="vehicle-exit"><span class="key">E</span> EXIT · <span class="key">RMB</span> AIM · <span class="key">LMB</span> FIRE</div>
         </div>
       </div>
 

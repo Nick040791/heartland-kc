@@ -24,8 +24,10 @@ const $ = (id) => document.getElementById(id);
 
 const viewportEl = $('viewport');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
-renderer.setSize(window.innerWidth, window.innerHeight);
+/* PS1-style low-res render: render at 1/3 resolution, upscaled with pixelation */
+const PS1_SCALE = 3;
+renderer.setPixelRatio(1);
+renderer.setSize(Math.floor(window.innerWidth / PS1_SCALE), Math.floor(window.innerHeight / PS1_SCALE));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -221,6 +223,9 @@ const peds = [];
 const pedBubbles = [];
 const interiors = [];
 let activeInterior = null;
+const bfZones = [];
+let bfScores = { player: 0, enemy: 0 };
+let bfTickets = { player: 200, enemy: 200 };
 let interiorReturnPos = null;
 const cops = [];
 const thugs = [];
@@ -4319,6 +4324,47 @@ function nextContract() {
   notify('CONTRACT', 'MEET THE CONTACT // ' + next.toUpperCase());
 }
 
+function updateBattlefield(dt) {
+  if (G.gameMode !== 'bf') return;
+  for (const z of bfZones) {
+    const px = player.pos.x, pz = player.pos.z;
+    let playerIn = dist2(px, pz, z.x, z.z) < z.radius;
+    let enemyIn = false, enemyCount = 0;
+    for (const t of thugs) {
+      if (!t.alive) continue;
+      if (dist2(t.group.position.x, t.group.position.z, z.x, z.z) < z.radius) { enemyIn = true; enemyCount++; }
+    }
+    let capturing = null;
+    if (playerIn && !enemyIn) capturing = 'player';
+    else if (enemyIn && !playerIn) capturing = 'enemy';
+    else if (playerIn && enemyIn) capturing = null; /* contested */
+    if (capturing) {
+      if (z.capturing !== capturing) { z.capturing = capturing; }
+      z.progress += (capturing === 'player' ? 1 : -1) * dt * 0.12;
+      z.progress = clamp(z.progress, -1, 1);
+      if (z.progress >= 1 && z.owner !== 'player') { z.owner = 'player'; z.progress = 1; z.flag.material.color.setHex(0x4a90d9); z.mesh.material.color.setHex(0x4a90d9); notify('BATTLEFIELD', z.name + ' CAPTURED', 'money'); G.sound.missionComplete(); }
+      if (z.progress <= -1 && z.owner !== 'enemy') { z.owner = 'enemy'; z.progress = -1; z.flag.material.color.setHex(0xd94a4a); z.mesh.material.color.setHex(0xd94a4a); notify('BATTLEFIELD', z.name + ' LOST', 'danger'); }
+    } else {
+      /* decay progress toward 0 if empty */
+      if (z.progress > 0) z.progress = Math.max(0, z.progress - dt * 0.05);
+      else if (z.progress < 0) z.progress = Math.min(0, z.progress + dt * 0.05);
+      z.capturing = null;
+    }
+  }
+  /* Scoring: each owned zone drains enemy tickets */
+  const playerOwned = bfZones.filter((z) => z.owner === 'player').length;
+  const enemyOwned = bfZones.filter((z) => z.owner === 'enemy').length;
+  bfTickets.enemy -= playerOwned * dt * 0.5;
+  bfTickets.player -= enemyOwned * dt * 0.5;
+  if (bfTickets.enemy <= 0) { bfTickets.enemy = 0; notify('BATTLEFIELD', 'VICTORY', 'money'); G.mode = 'dead'; }
+  if (bfTickets.player <= 0) { bfTickets.player = 0; notify('BATTLEFIELD', 'DEFEAT', 'danger'); G.mode = 'dead'; }
+  /* Update HUD */
+  const title = $('objective-title');
+  const sub = $('objective-sub');
+  if (title) title.textContent = 'CONQUEST';
+  if (sub) sub.innerHTML = 'ZONES ' + playerOwned + '/' + bfZones.length + '  ·  TICKETS ' + Math.ceil(bfTickets.player) + ' vs ' + Math.ceil(bfTickets.enemy);
+}
+
 function updateContract(dt) {
   if (state.contract.stage === 'cooldown') {
     state.contract.cooldown -= dt;
@@ -5684,6 +5730,11 @@ function updateSpeedHUD() {
     else if (v.type === 'boat') nameEl.textContent = 'KC RIVER RUNNER';
     else nameEl.textContent = v.isPolice ? 'KCPD CRUISER' : 'VULCAN GT';
   }
+  const hdg = $('dash-hdg'); const alt = $('dash-alt'); const sp = $('dash-spd');
+  const v2 = activeVehicle;
+  if (hdg) hdg.textContent = String(Math.round(((v2.heading * 180 / Math.PI) % 360 + 360) % 360));
+  if (alt) alt.textContent = String(Math.round(v2.y || 0));
+  if (sp) sp.textContent = String(Math.round(Math.abs(v2.speed) * 2.237));
 }
 
 function notify(tag, text, cls = '') {
@@ -5944,7 +5995,10 @@ function startGame() {
   resetActors();
   rebuildPlayerRig();
 
-  const spawn = findSafeSpawn();
+  let spawn = findSafeSpawn();
+  if (G.gameMode === 'bf' && city.spawnPoints) {
+    spawn = city.spawnPoints.player[0];
+  }
   resetPlayer(spawn);
   gameTime = 0;
   menuTime = 0;
@@ -5976,8 +6030,8 @@ function startGame() {
   state.contract = {
     number: 1,
     reward: 1200,
-    stage: 'travel',
-    location: 'Kauffman Center',
+    stage: G.gameMode === 'bf' ? 'none' : 'travel',
+    location: G.gameMode === 'bf' ? '' : 'Kauffman Center',
     marker: null,
     cooldown: 0,
     remaining: 0,
@@ -5999,7 +6053,7 @@ function startGame() {
   G.mode = 'playing';
   camera.fov = 75;
   camera.updateProjectionMatrix();
-  startTravel('Kauffman Center');
+  if (G.gameMode !== 'bf') startTravel('Kauffman Center');
   randomEvent.cooldown = 4.5;
   updateWantedUI();
   updateClock();
@@ -6071,7 +6125,10 @@ function respawn() {
   } else if (state.contract.stage === 'travel' && !contractMarker) {
     createContractMarker(state.contract.location);
   }
-  const spawn = findSafeSpawn();
+  let spawn = findSafeSpawn();
+  if (G.gameMode === 'bf' && city.spawnPoints) {
+    spawn = city.spawnPoints.player[Math.floor(Math.random() * city.spawnPoints.player.length)];
+  }
   resetPlayer(spawn);
   state.health = 100;
   state.armor = 50;
@@ -6442,19 +6499,20 @@ function wireUI() {
 
   const modeGtb = $('mode-gtb-btn');
   const modeBf = $('mode-bf-btn');
-  function setMode(mode) {
+  function setMode(mode, reload) {
     G.gameMode = mode;
+    writeStore('poly_gameMode', mode);
     if (modeGtb) modeGtb.style.borderColor = mode === 'gtb' ? 'var(--amber)' : 'var(--line)';
     if (modeGtb) modeGtb.style.color = mode === 'gtb' ? 'var(--amber)' : 'var(--cream-dim)';
     if (modeBf) modeBf.style.borderColor = mode === 'bf' ? 'var(--amber)' : 'var(--line)';
     if (modeBf) modeBf.style.color = mode === 'bf' ? 'var(--amber)' : 'var(--cream-dim)';
-    const label = $('btn-label') ? null : null;
     const startLabel = document.querySelector('#start-btn .btn-label');
     if (startLabel) startLabel.textContent = mode === 'bf' ? 'ENTER BATTLEFIELD' : 'ENTER THE CITY';
+    if (reload) location.reload();
   }
-  if (modeGtb) modeGtb.addEventListener('click', () => { setMode('gtb'); G.sound.ui(); });
-  if (modeBf) modeBf.addEventListener('click', () => { setMode('bf'); G.sound.ui(); });
-  setMode('gtb');
+  if (modeGtb) modeGtb.addEventListener('click', () => { setMode('gtb', true); });
+  if (modeBf) modeBf.addEventListener('click', () => { setMode('bf', true); });
+  setMode(readStore('poly_gameMode', 'gtb'), false);
 
   $('start-btn').addEventListener('click', () => {
     if (G.mode !== 'menu') return;
@@ -6660,8 +6718,8 @@ function wireUI() {
   });
 
   window.addEventListener('resize', () => {
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(1);
+    renderer.setSize(Math.floor(window.innerWidth / PS1_SCALE), Math.floor(window.innerHeight / PS1_SCALE));
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     weaponCamera.aspect = window.innerWidth / window.innerHeight;
@@ -6753,6 +6811,7 @@ function loop() {
     updateThugs(dt);
     updateWanted(dt);
     updateContract(dt);
+    updateBattlefield(dt);
     updateRandomEvent(dt);
     updateWorldPickups(dt);
     updateCorpses(dt);
@@ -6803,6 +6862,7 @@ function loop() {
 }
 
 function init() {
+  G.gameMode = readStore('poly_gameMode', 'gtb');
   const storedBest = parseInt(readStore('heartland26_best', '0'), 10);
   state.bestCash = Number.isFinite(storedBest) ? storedBest : 0;
   const storedMuted = readStore('heartland26_muted', '0') === '1';
@@ -6810,8 +6870,29 @@ function init() {
   G.sound.muted = storedMuted;
   G.sound.setMuted(storedMuted);
 
-  city = KC.buildCity(scene);
+  if (G.gameMode === 'bf') {
+    KC.WORLD_LIMIT = 340;
+    city = KC.buildBattlefield(scene);
+  } else {
+    KC.WORLD_LIMIT = 260;
+    city = KC.buildCity(scene);
+  }
   G.city = city;
+  if (G.gameMode === 'bf') {
+    bfZones.length = 0;
+    if (city.zones) for (const z of city.zones) bfZones.push(z);
+    bfScores = { player: 0, enemy: 0 };
+    bfTickets = { player: 200, enemy: 200 };
+    /* Spawn enemy soldiers */
+    if (city.enemySpawns) {
+      for (const sp of city.enemySpawns) {
+        for (let i = 0; i < 3; i++) {
+          const t = makeHostile('thug', sp.x + rand(-8, 8), sp.z + rand(-8, 8));
+          t.gangster = false;
+        }
+      }
+    }
+  }
   setupWeapons();
   rebuildPlayerRig();
   spawnCars();
@@ -6835,7 +6916,7 @@ function init() {
   wireUI();
   loopClock.start();
   requestAnimationFrame(loop);
-  console.info('HEARTLAND 26 Extended ready //', city.blockData.length, 'blocks //', cars.length, 'vehicles //', peds.length, 'pedestrians');
+  console.info('HEARTLAND 26 Extended ready //', (city.blockData ? city.blockData.length : (city.zones ? city.zones.length : 0)), 'zones/blocks //', cars.length, 'vehicles //', peds.length, 'pedestrians');
 }
 
 async function boot() {
