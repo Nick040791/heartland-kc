@@ -7463,7 +7463,7 @@ function updateDrivenCar(dt) {
   for (let wi = 0; wi < car.model.wheels.length; wi++) {
     const w = car.model.wheels[wi];
     w.rotation.x += car.speed * dt * 2.5;
-    if (wi < 2) w.rotation.y = steer * 0.35;
+    if (wi < 2 && !isTank) w.rotation.y = steer * 0.35;
   }
 
   player.pos.set(car.x, 0, car.z);
@@ -10691,14 +10691,15 @@ function wireUI() {
     if (!pointer.locked || G.mode !== 'playing' || rpMenuOpen) return;
     const zoomScale = player.aiming ? (0.7 / (ZOOM_LEVELS[player.zoomIndex] || 1.25)) : 1.0;
     const sens = pointer.sensitivity * 0.0021 * zoomScale;
-    if (activeVehicle && activeVehicle.type === 'heli') {
+    if (activeVehicle && activeVehicle.type === 'heli' && activeSeat === 'driver') {
       activeVehicle.mouseYaw = clamp((activeVehicle.mouseYaw || 0) - e.movementX * sens * 2.4, -1.8, 1.8);
       activeVehicle.mousePitch = clamp((activeVehicle.mousePitch || 0) - e.movementY * sens * 1.15, -0.65, 0.65);
-    } else if (activeVehicle && activeVehicle.type === 'plane') {
+    } else if (activeVehicle && activeVehicle.type === 'plane' && activeSeat === 'driver') {
       activeVehicle.mouseRoll = clamp((activeVehicle.mouseRoll || 0) + e.movementX * sens * 2.2, -1.2, 1.2);
       activeVehicle.mousePitch = clamp((activeVehicle.mousePitch || 0) - e.movementY * sens * 2.1, -1.0, 1.0);
     } else if (activeVehicle) {
-      player.carLookYaw = clamp(player.carLookYaw - e.movementX * sens, -2.5, 2.5);
+      const full360 = activeSeat === 'gunner' || activeVehicle.style === 'tank' || activeVehicle.type === 'boat';
+      player.carLookYaw = full360 ? (player.carLookYaw - e.movementX * sens) : clamp(player.carLookYaw - e.movementX * sens, -2.5, 2.5);
       player.carLookPitch = clamp(player.carLookPitch - e.movementY * sens, -0.55, 0.65);
     } else {
       player.yaw -= e.movementX * sens;
