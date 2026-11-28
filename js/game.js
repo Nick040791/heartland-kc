@@ -1946,14 +1946,24 @@ function makePerson(opts = {}) {
   group.add(shadow);
 
   const proxyMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false });
-  const bodyProxy = new THREE.Mesh(new THREE.SphereGeometry(0.44, 8, 6), proxyMat);
-  bodyProxy.position.y = 1.08;
-  bodyProxy.userData.part = 'body';
+  const bodyProxy = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6), proxyMat);
+  bodyProxy.position.y = 1.05;
+  bodyProxy.userData.part = 'torso';
   group.add(bodyProxy);
-  const headProxy = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6), proxyMat);
-  headProxy.position.y = 1.7;
+  const headProxy = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), proxyMat);
+  headProxy.position.y = 1.72;
   headProxy.userData.part = 'head';
   group.add(headProxy);
+  /* Limb proxies for extremity hits */
+  const limbProxies = [];
+  const limbProxy = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 4), proxyMat);
+  for (const [lx, ly, lz] of [[-0.32, 1.05, 0], [0.32, 1.05, 0], [-0.14, 0.45, 0], [0.14, 0.45, 0]]) {
+    const lp = limbProxy.clone();
+    lp.position.set(lx, ly, lz);
+    lp.userData.part = 'limb';
+    group.add(lp);
+    limbProxies.push(lp);
+  }
 
   return {
     group, mats, torso, head, role, heldProp,
@@ -1961,7 +1971,7 @@ function makePerson(opts = {}) {
     rightArm: rightArmObj.pivot, rightForearm: rightArmObj.joint,
     leftLeg: leftLegObj.pivot, leftKnee: leftLegObj.joint,
     rightLeg: rightLegObj.pivot, rightKnee: rightLegObj.joint,
-    hitMeshes: [bodyProxy, headProxy], shadow
+    hitMeshes: [bodyProxy, headProxy].concat(limbProxies), shadow
   };
 }
 
@@ -3360,10 +3370,17 @@ function tryShoot() {
       end = h.point.clone();
       if (h.object.userData.actor) {
         const actor = h.object.userData.actor;
-        const head = h.object.userData.part === 'head';
+        const part = h.object.userData.part || 'torso';
+        const head = part === 'head';
         const dist = origin.distanceTo(h.point);
         const falloff = clamp(1 - (dist / w.range) * (1 - (w.falloff || 0.6)), w.falloff || 0.6, 1);
-        const dmg = (w.damage / pellets) * (head ? (w.headMult || 2.4) : 1) * falloff;
+        let partMult = 1.0;
+        if (part === 'head') partMult = (w.headMult || 2.4);
+        else if (part === 'torso') partMult = 0.55; /* 2 shots to kill */
+        else if (part === 'limb') partMult = 0.27; /* 4 shots to kill */
+        /* Ensure headshot is lethal */
+        if (part === 'head') partMult = Math.max(partMult, 100 / Math.max(1, w.damage));
+        const dmg = (w.damage / pellets) * partMult * falloff;
         damageActor(actor, dmg, h.point, head);
       } else if (h.object.userData.car) {
       const hitCar = h.object.userData.car;
