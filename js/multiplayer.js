@@ -137,13 +137,19 @@
     const chestGroup = new THREE.Group();
     upperBody.add(chestGroup);
 
+    const isMilitary = !!opts.military;
+    const camoTex = (isMilitary && KC.makeCamoTexture)
+      ? (KC._playerCamoTex || (KC._playerCamoTex = KC.makeCamoTexture(['#3c4d34', '#273421', '#545d3c', '#1e241b'])))
+      : null;
+
     const skinMat = new THREE.MeshStandardMaterial({ color: skinHex, roughness: 0.85, flatShading: true });
-    const shirtMat = new THREE.MeshStandardMaterial({ color: shirtHex, roughness: 0.85, flatShading: true });
-    const accentMat = new THREE.MeshStandardMaterial({ color: accentHex, roughness: 0.5, metalness: 0.35, flatShading: true });
-    const pantsMat = new THREE.MeshStandardMaterial({ color: pantsHex, roughness: 0.9, flatShading: true });
+    const shirtMat = new THREE.MeshStandardMaterial({ color: isMilitary ? 0xffffff : shirtHex, map: camoTex, roughness: 0.86, flatShading: true });
+    const accentMat = new THREE.MeshStandardMaterial({ color: isMilitary ? 0x3b4534 : accentHex, roughness: 0.62, metalness: 0.22, flatShading: true });
+    const pantsMat = new THREE.MeshStandardMaterial({ color: isMilitary ? 0xd8d8d8 : pantsHex, map: camoTex, roughness: 0.9, flatShading: true });
     const hairMat = new THREE.MeshStandardMaterial({ color: hairHex, roughness: 0.85, flatShading: true });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x16181f, roughness: 0.65, metalness: 0.28, flatShading: true });
-    const steelMat = new THREE.MeshStandardMaterial({ color: 0x7b8492, roughness: 0.35, metalness: 0.45, flatShading: true });
+    const armorMat = new THREE.MeshStandardMaterial({ color: isMilitary ? 0x2c3627 : 0x1d2028, roughness: 0.78, metalness: 0.18, flatShading: true });
+    const steelMat = new THREE.MeshStandardMaterial({ color: 0x5c6470, roughness: 0.38, metalness: 0.62, flatShading: true });
     const goldChainMat = new THREE.MeshStandardMaterial({ color: 0xffc44d, roughness: 0.28, metalness: 0.85 });
 
     /* Anatomical PS1 Tapered Torso (broad chest tapering to waist) */
@@ -156,18 +162,48 @@
     abdomen.scale.set(1.06, 1.0, 0.68);
     abdomen.position.y = 0.08;
     chestGroup.add(abdomen);
-    /* Collar / Neck */
-    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.088, 0.12, 6), skinMat);
+    /* Collar / Neck (tactical balaclava gaiter in military mode!) */
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.086, 0.10, 0.13, 6), isMilitary ? darkMat : skinMat);
     neck.position.y = 0.72;
     chestGroup.add(neck);
-    /* Belt & tactical buckle */
-    const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.228, 0.228, 0.065, 6), darkMat);
-    belt.scale.set(1.08, 1.0, 0.70);
+    /* Belt & tactical battle-belt pouches */
+    const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.232, 0.232, 0.07, 6), darkMat);
+    belt.scale.set(1.09, 1.0, 0.72);
     belt.position.y = 0.02;
     chestGroup.add(belt);
 
-    /* Outfit details */
-    if (cfg.outfit === 'jacket') {
+    /* Outfit / Ballistic Armor details */
+    if (isMilitary || cfg.outfit === 'tactical') {
+      /* Modular Ballistic Plate Carrier (Front/Back SAPI Plates + Collar + Mag Pouches + Radio Pack) */
+      const vest = new THREE.Mesh(new THREE.CylinderGeometry(0.325, 0.265, 0.48, 6), armorMat);
+      vest.scale.set(1.08, 1, 0.78);
+      vest.position.set(0, 0.40, 0);
+      vest.castShadow = true;
+      chestGroup.add(vest);
+      const frontPlate = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.06), armorMat);
+      frontPlate.position.set(0, 0.43, -0.195);
+      const backPlate = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.36, 0.07), armorMat);
+      backPlate.position.set(0, 0.43, 0.195);
+      const gorget = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.23, 0.10, 6), armorMat);
+      gorget.scale.set(1.08, 1, 0.78);
+      gorget.position.set(0, 0.66, 0);
+      chestGroup.add(frontPlate, backPlate, gorget);
+      for (const px of [-0.115, 0, 0.115]) {
+        const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.145, 0.068), darkMat);
+        pouch.position.set(px, 0.26, -0.228);
+        chestGroup.add(pouch);
+      }
+      /* Tactical Assault Pack + Comms Radio Whip Antenna */
+      const pack = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.36, 0.14), armorMat);
+      pack.position.set(0, 0.42, 0.26);
+      const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.013, 0.56, 4), darkMat);
+      ant.position.set(0.11, 0.80, 0.25);
+      chestGroup.add(pack, ant);
+      /* Hip holster & dump pouch */
+      const holster = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.15, 0.11), darkMat);
+      holster.position.set(0.24, 0.02, -0.02);
+      chestGroup.add(holster);
+    } else if (cfg.outfit === 'jacket') {
       const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.26, 0.14, 6), accentMat);
       collar.scale.set(1.1, 1, 0.72);
       collar.position.set(0, 0.65, 0.01);
@@ -189,16 +225,6 @@
       const numBox = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.04), accentMat);
       numBox.position.set(0, 0.38, -0.185);
       chestGroup.add(stripe1, numBox);
-    } else if (cfg.outfit === 'tactical') {
-      const vest = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.26, 0.48, 6), darkMat);
-      vest.scale.set(1.08, 1, 0.74);
-      vest.position.set(0, 0.40, 0);
-      chestGroup.add(vest);
-      for (const px of [-0.14, 0, 0.14]) {
-        const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.15, 0.065), accentMat);
-        pouch.position.set(px, 0.27, -0.215);
-        chestGroup.add(pouch);
-      }
     } else if (cfg.outfit === 'suit') {
       const lapel = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.52, 0.04), new THREE.MeshStandardMaterial({ color: 0xf0eadc, roughness: 0.75, flatShading: true }));
       lapel.position.set(0, 0.42, -0.18);
@@ -219,30 +245,61 @@
     headPivot.position.y = 0.76;
     chestGroup.add(headPivot);
 
-    const head = new THREE.Mesh(new THREE.CylinderGeometry(0.165, 0.145, 0.22, 7), skinMat);
+    const head = new THREE.Mesh(new THREE.CylinderGeometry(0.162, 0.142, 0.21, 7), skinMat);
     head.scale.set(0.96, 1, 1.06);
-    head.position.y = 0.21;
+    head.position.y = 0.20;
     head.castShadow = true;
     headPivot.add(head);
-    const jaw = new THREE.Mesh(new THREE.CylinderGeometry(0.142, 0.095, 0.11, 7), skinMat);
-    jaw.scale.set(0.95, 1, 1.04);
+    const jaw = new THREE.Mesh(new THREE.CylinderGeometry(0.142, 0.10, 0.115, 7), isMilitary ? darkMat : skinMat);
+    jaw.scale.set(0.96, 1, 1.05);
     jaw.position.set(0, 0.065, -0.01);
     headPivot.add(jaw);
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.068, 4), skinMat);
-    nose.rotation.x = -Math.PI * 0.42;
-    nose.position.set(0, 0.165, -0.175);
-    headPivot.add(nose);
+    if (!isMilitary) {
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.068, 4), skinMat);
+      nose.rotation.x = -Math.PI * 0.42;
+      nose.position.set(0, 0.165, -0.175);
+      headPivot.add(nose);
+    }
 
-    /* Recessed Eyes & Brow */
+    /* Recessed Eyes & Brow (ballistic visor covers eyes in military mode!) */
     const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111115 });
     for (const ox of [-0.058, 0.058]) {
-      const eye = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.032, 0.02), eyeMat);
+      const eye = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.030, 0.02), eyeMat);
       eye.position.set(ox, 0.205, -0.155);
       headPivot.add(eye);
     }
 
-    /* Hair / Hat styles */
-    if (cfg.hairStyle === 'fade') {
+    /* Hair / Hat / Ballistic FAST Helmet */
+    if (isMilitary) {
+      const helmMat = new THREE.MeshStandardMaterial({ color: 0x2a3526, roughness: 0.72, metalness: 0.18, flatShading: true });
+      const visorMat = new THREE.MeshStandardMaterial({ color: 0x101820, roughness: 0.18, metalness: 0.85, flatShading: true });
+      /* Sculpted Rounded FAST/MICH Ballistic Helmet Dome */
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.195, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.60), helmMat);
+      dome.scale.set(1.0, 0.96, 1.12);
+      dome.position.set(0, 0.23, 0.01);
+      dome.castShadow = true;
+      headPivot.add(dome);
+      /* Side ARC Rails + Tactical Headset Earcups */
+      for (const sx of [-0.18, 0.18]) {
+        const ear = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.11, 0.095), darkMat);
+        ear.position.set(sx, 0.18, 0.01);
+        headPivot.add(ear);
+      }
+      /* Front NVG Shroud + Dual-Tube Night Vision Goggles (flipped up on brow) */
+      const shroud = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.07, 0.045), darkMat);
+      shroud.position.set(0, 0.30, -0.195);
+      headPivot.add(shroud);
+      for (const nx of [-0.048, 0.048]) {
+        const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.028, 0.095, 6), darkMat);
+        tube.rotation.x = Math.PI / 2 - 0.35;
+        tube.position.set(nx, 0.33, -0.23);
+        headPivot.add(tube);
+      }
+      /* Wrap-Around Dark Ballistic Goggles */
+      const goggles = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.075, 0.055), visorMat);
+      goggles.position.set(0, 0.205, -0.162);
+      headPivot.add(goggles);
+    } else if (cfg.hairStyle === 'fade') {
       const top = new THREE.Mesh(new THREE.CylinderGeometry(0.165, 0.175, 0.11, 7), hairMat);
       top.scale.set(0.98, 1, 1.08);
       top.position.set(0, 0.34, 0.01);
@@ -320,6 +377,11 @@
       upperMesh.position.y = -upperLen / 2;
       upperMesh.castShadow = true;
       shoulder.add(upperMesh);
+      if (isMilitary) {
+        const pauldron = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.17), armorMat);
+        pauldron.position.set(x > 0 ? 0.03 : -0.03, -0.05, 0);
+        shoulder.add(pauldron);
+      }
 
       const elbow = new THREE.Group();
       elbow.position.set(0, -upperLen + 0.02, 0);
@@ -332,7 +394,7 @@
       cuff.position.y = -lowerLen + 0.09;
       elbow.add(cuff);
 
-      const hand = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.11, 0.085), skinMat);
+      const hand = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.11, 0.085), isMilitary ? darkMat : skinMat);
       hand.position.y = -lowerLen + 0.01;
       hand.castShadow = true;
       elbow.add(hand);
@@ -382,43 +444,92 @@
     const leftLegObj = makeArticulatedLeg(-0.15, -0.02);
     const rightLegObj = makeArticulatedLeg(0.15, -0.02);
 
-    /* 3rd-person held weapons attached to right forearm (elbow) */
-    const gunGroup = new THREE.Group();
-    /* 1. Pistol mesh */
+    /* 3rd-person Shoulder/Chest-Anchored Weapon System (ALL 4 Weapons: Pistol, Carbine/M4, Shotgun, Sniper!)
+       Mounted to chestGroup (NOT a swinging forearm) so weapons sit naturally in Low-Ready, Tactical Sprint,
+       and Shouldered Combat Aim without pointing awkwardly skyward! */
+    const weaponAnchor = new THREE.Group();
+    weaponAnchor.position.set(0.10, 0.36, -0.28);
+    chestGroup.add(weaponAnchor);
+    const gunGroup = weaponAnchor;
+
+    /* 1. 9mm Tactical Pistol (horizontal along -Z) */
     const pistolMesh = new THREE.Group();
-    const pSlide = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.28, 0.095), steelMat);
-    pSlide.position.set(0, -0.39, -0.03);
-    const pGrip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.11, 0.14), darkMat);
-    pGrip.position.set(0, -0.3, 0.03);
+    const pSlide = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.065, 0.25), steelMat);
+    pSlide.position.set(0, 0.03, -0.11);
+    const pGrip = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.125, 0.07), darkMat);
+    pGrip.position.set(0, -0.04, -0.02);
+    pGrip.rotation.x = 0.22;
     pistolMesh.add(pSlide, pGrip);
-    gunGroup.add(pistolMesh);
+    weaponAnchor.add(pistolMesh);
 
-    /* 2. Vector Carbine Rifle mesh */
+    /* 2. M4A1 / Carbine Assault Rifle (horizontal along -Z, stock to +Z) */
     const rifleMesh = new THREE.Group();
-    const rBody = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.48, 0.13), darkMat);
-    rBody.position.set(0, -0.44, -0.02);
-    const rBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.26, 6), steelMat);
-    rBarrel.position.set(0, -0.74, -0.04);
-    const rMag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.19), accentMat);
-    rMag.position.set(0, -0.48, 0.08);
-    const rStock = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.18, 0.11), darkMat);
-    rStock.position.set(0, -0.15, 0.0);
-    rifleMesh.add(rBody, rBarrel, rMag, rStock);
+    const rBody = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.095, 0.38), darkMat);
+    rBody.position.set(0, 0.01, -0.12);
+    const rRail = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.068, 0.28), darkMat);
+    rRail.position.set(0, 0.015, -0.40);
+    const rBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.24, 6), steelMat);
+    rBarrel.rotation.x = Math.PI / 2;
+    rBarrel.position.set(0, 0.02, -0.62);
+    const rOptic = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.048, 0.11), darkMat);
+    rOptic.position.set(0, 0.08, -0.10);
+    const rMag = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.16, 0.065), steelMat);
+    rMag.position.set(0, -0.095, -0.18);
+    rMag.rotation.x = 0.2;
+    const rGrip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.11, 0.055), darkMat);
+    rGrip.position.set(0, -0.075, 0.0);
+    rGrip.rotation.x = 0.24;
+    const rStock = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.10, 0.24), darkMat);
+    rStock.position.set(0, -0.005, 0.18);
+    rifleMesh.add(rBody, rRail, rBarrel, rOptic, rMag, rGrip, rStock);
     rifleMesh.visible = false;
-    gunGroup.add(rifleMesh);
+    weaponAnchor.add(rifleMesh);
 
-    /* 3. 3rd-Person Muzzle Flash Sprite */
+    /* 3. M870 Tactical Pump Shotgun */
+    const shotgunMesh = new THREE.Group();
+    const sRec = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.088, 0.34), darkMat);
+    sRec.position.set(0, 0.01, -0.10);
+    const sBar = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.56, 6), steelMat);
+    sBar.rotation.x = Math.PI / 2;
+    sBar.position.set(0, 0.032, -0.50);
+    const sTube = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.44, 6), darkMat);
+    sTube.rotation.x = Math.PI / 2;
+    sTube.position.set(0, -0.004, -0.44);
+    const sPump = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.068, 0.20), armorMat);
+    sPump.position.set(0, -0.008, -0.42);
+    const sStock = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.105, 0.28), darkMat);
+    sStock.position.set(0, -0.02, 0.18);
+    sStock.rotation.x = -0.08;
+    shotgunMesh.add(sRec, sBar, sTube, sPump, sStock);
+    shotgunMesh.visible = false;
+    weaponAnchor.add(shotgunMesh);
+
+    /* 4. M24 Tactical Sniper Rifle */
+    const sniperMesh = new THREE.Group();
+    const snRec = new THREE.Mesh(new THREE.BoxGeometry(0.060, 0.085, 0.44), armorMat);
+    snRec.position.set(0, 0.005, -0.14);
+    const snBar = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.62, 6), steelMat);
+    snBar.rotation.x = Math.PI / 2;
+    snBar.position.set(0, 0.025, -0.62);
+    const snScope = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.024, 0.28, 7), darkMat);
+    snScope.rotation.x = Math.PI / 2;
+    snScope.position.set(0, 0.088, -0.14);
+    const snStock = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.115, 0.28), armorMat);
+    snStock.position.set(0, -0.015, 0.19);
+    sniperMesh.add(snRec, snBar, snScope, snStock);
+    sniperMesh.visible = false;
+    weaponAnchor.add(sniperMesh);
+
+    /* 3rd-Person Muzzle Flash Sprite right at barrel tip */
     const flashTex = KC.makeGlowTexture ? KC.makeGlowTexture(0.35) : null;
     const muzzleFlash3P = new THREE.Sprite(new THREE.SpriteMaterial({
       map: flashTex, color: 0xffc96e, transparent: true, opacity: 0.95,
       blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false
     }));
-    muzzleFlash3P.position.set(0, -0.75, -0.04);
+    muzzleFlash3P.position.set(0, 0.02, -0.78);
     muzzleFlash3P.scale.set(0.55, 0.55, 1);
     muzzleFlash3P.visible = false;
-    gunGroup.add(muzzleFlash3P);
-
-    rightArmObj.elbow.add(gunGroup);
+    weaponAnchor.add(muzzleFlash3P);
 
     /* 3rd-person held flashlight attached to left forearm (elbow) */
     const torchGroup = new THREE.Group();
@@ -477,8 +588,11 @@
       rightLeg: rightLegObj.hip,
       rightKnee: rightLegObj.knee,
       gunGroup,
+      weaponAnchor,
       pistolMesh,
       rifleMesh,
+      shotgunMesh,
+      sniperMesh,
       muzzleFlash3P,
       torchGroup,
       torchCone,
@@ -542,13 +656,15 @@
     const isSprinting = moveAmt > 1.05 && !crouching && !aiming;
     const crouchAmt = crouching ? 1 : 0;
 
-    /* Weapon mesh visibility & 3P muzzle flash */
-    if (rig.pistolMesh && rig.rifleMesh) {
-      rig.pistolMesh.visible = hasWeapon && weaponIndex === 0;
-      rig.rifleMesh.visible = hasWeapon && weaponIndex === 1;
-    }
+    /* Weapon mesh visibility (ALL 4 weapon slots!) & 3P muzzle flash */
+    const isLongGun = weaponIndex >= 1;
+    if (rig.pistolMesh) rig.pistolMesh.visible = hasWeapon && weaponIndex === 0;
+    if (rig.rifleMesh) rig.rifleMesh.visible = hasWeapon && (weaponIndex === 1 || weaponIndex >= 4);
+    if (rig.shotgunMesh) rig.shotgunMesh.visible = hasWeapon && weaponIndex === 2;
+    if (rig.sniperMesh) rig.sniperMesh.visible = hasWeapon && weaponIndex === 3;
     if (rig.muzzleFlash3P) {
       rig.muzzleFlash3P.visible = !!firing;
+      rig.muzzleFlash3P.position.z = weaponIndex === 0 ? -0.32 : weaponIndex === 3 ? -0.98 : -0.78;
       if (firing) {
         const s = 0.42 + Math.random() * 0.25;
         rig.muzzleFlash3P.scale.set(s, s, 1);
@@ -663,73 +779,74 @@
       rig.rightKnee.rotation.x = KC.lerp(rig.rightKnee.rotation.x, rKneeX, 0.35);
     }
 
-    /* 5. Articulated Arms & Forearms (Weapon Aim, Recoil, Reload, Sprint Swing & Flashlight) */
-    const armSwing = Math.sin(walkPhase) * (isSprinting ? 0.72 : 0.45) * Math.min(1.2, moveAmt);
-    let rShoulderX = 0, rShoulderY = 0, rShoulderZ = 0, rElbowX = 0.22;
-    let lShoulderX = 0, lShoulderY = 0, lShoulderZ = 0, lElbowX = 0.22;
+    /* 5. Soldier Articulated Arms + Chest/Shoulder-Anchored Tactical Weapon Stances */
+    const armSwing = Math.sin(walkPhase) * (isSprinting ? 0.65 : 0.35) * Math.min(1.2, moveAmt);
+    const gaitBob = Math.cos(walkPhase * 2) * 0.015 * Math.min(1, moveAmt);
+    let rShoulderX = 0, rShoulderY = 0, rShoulderZ = 0, rElbowX = 0.3;
+    let lShoulderX = 0, lShoulderY = 0, lShoulderZ = 0, lElbowX = 0.3;
+
+    /* Weapon anchor target position & orientation (relative to chestGroup: +Y up, -Z forward, +X right) */
+    let wx = 0.11, wy = 0.35, wz = -0.27;
+    let wrx = -0.26, wry = 0.50, wrz = -0.14;
 
     if (reloading && hasWeapon) {
-      /* 3rd-Person Reload Animation: right hand holds gun tilted in, left hand fetches mag -> inserts */
+      /* Tactical Reload: rifle tilted cleanly inward while support hand pulls mag from chest pouch */
       const reloadWave = Math.sin(reloadProgress * Math.PI);
-      rShoulderX = 0.85 + pitch * 0.3;
-      rShoulderY = -0.28;
-      rElbowX = 0.55;
-
-      lShoulderX = 0.35 + reloadWave * 0.75;
-      lShoulderY = 0.15 + reloadWave * 0.38;
-      lElbowX = 0.35 + reloadWave * 0.65;
+      wx = 0.08; wy = 0.38; wz = -0.29;
+      wrx = 0.24; wry = 0.58; wrz = 0.36;
+      rShoulderX = 0.65; rShoulderY = -0.22; rElbowX = 0.85;
+      lShoulderX = 0.32 + reloadWave * 0.65; lShoulderY = 0.38 + reloadWave * 0.22; lElbowX = 0.72 + reloadWave * 0.45;
     } else if (hasWeapon && (aiming || firing || recoilKick > 0.04)) {
-      /* Combat Aiming / Firing Pose (Two-Handed Grip + Recoil Kick) */
-      const kickPitch = recoilKick * 0.38;
-      if (weaponIndex === 1) {
-        /* Vector Carbine Rifle two-handed shouldered stance */
-        rShoulderX = 1.28 + pitch * 0.78 + kickPitch;
-        rShoulderY = -0.18;
-        rElbowX = 0.32 + recoilKick * 0.18;
+      /* Shouldered Combat Aim / Firing Stance: stock tucked in right shoulder pocket, barrel DEAD LEVEL at target! */
+      const kickPitch = recoilKick * 0.14;
+      const kickBack = recoilKick * 0.055;
+      if (isLongGun) {
+        wx = 0.17; wy = 0.49; wz = -0.34 + kickBack;
+        wrx = pitch * 0.85 + kickPitch; wry = -0.14; wrz = 0;
+        rShoulderX = 0.94 + pitch * 0.68 + kickPitch * 0.8;
+        rShoulderY = -0.14; rShoulderZ = -0.06; rElbowX = 0.72;
+        lShoulderX = 1.02 + pitch * 0.68 + kickPitch * 0.5;
+        lShoulderY = 0.38; lShoulderZ = 0.08; lElbowX = 0.58;
       } else {
-        /* 9mm Pistol two-handed extended stance */
-        rShoulderX = 1.44 + pitch * 0.78 + kickPitch;
-        rShoulderY = -0.12;
-        rElbowX = 0.14 + recoilKick * 0.22;
+        /* 9mm Pistol Isosceles Two-Handed Combat Stance */
+        wx = 0.08; wy = 0.50; wz = -0.44 + kickBack;
+        wrx = pitch * 0.85 + kickPitch * 1.25; wry = -0.06; wrz = 0;
+        rShoulderX = 1.28 + pitch * 0.75 + kickPitch;
+        rShoulderY = -0.12; rShoulderZ = -0.04; rElbowX = 0.24;
+        lShoulderX = 1.26 + pitch * 0.75 + kickPitch * 0.7;
+        lShoulderY = 0.20; lShoulderZ = 0.04; lElbowX = 0.26;
       }
-      /* Left arm: if flashlight is on, hold flashlight alongside weapon; else two-hand support grip */
       if (flashlightOn) {
-        lShoulderX = 1.42 + pitch * 0.72;
-        lShoulderY = 0.08;
-        lElbowX = 0.18;
-      } else {
-        lShoulderX = 1.28 + pitch * 0.75 + kickPitch * 0.7;
-        lShoulderY = 0.44;
-        lElbowX = 0.42;
+        lShoulderX = 1.32 + pitch * 0.72; lShoulderY = 0.06; lElbowX = 0.22;
       }
     } else if (hasWeapon) {
-      /* Relaxed Low-Ready Weapon Carry while walking / sprinting / standing */
       if (isSprinting) {
-        /* Athletic sprint pump with weapon tucked safely across chest */
-        rShoulderX = 0.55 + armSwing * 0.55;
-        rShoulderY = -0.25;
-        rElbowX = 0.75;
+        /* Tactical High-Chest Sprint Carry: weapon held across plate carrier, elbows tucked tight! */
+        wx = 0.03; wy = 0.36 + gaitBob; wz = -0.26;
+        wrx = -0.14 + Math.sin(walkPhase) * 0.05;
+        wry = isLongGun ? (0.76 + Math.sin(walkPhase) * 0.09) : (0.45 + Math.sin(walkPhase) * 0.12);
+        wrz = -0.22;
+        rShoulderX = 0.52 + armSwing * 0.22; rShoulderY = -0.18; rShoulderZ = -0.06; rElbowX = 1.02;
+        lShoulderX = 0.58 - armSwing * 0.22; lShoulderY = 0.42; lShoulderZ = 0.08; lElbowX = 0.96;
+      } else if (isLongGun) {
+        /* Authentic Military Low-Ready Patrol Carry: tucked across chest, elbows tight to ribs */
+        wx = 0.09; wy = 0.34 + gaitBob; wz = -0.28;
+        wrx = -0.32 + pitch * 0.22;
+        wry = 0.52 + Math.sin(walkPhase) * 0.04 * Math.min(1, moveAmt);
+        wrz = -0.14;
+        rShoulderX = 0.48 + pitch * 0.18 - armSwing * 0.12;
+        rShoulderY = -0.14; rShoulderZ = -0.05; rElbowX = 0.90;
+        lShoulderX = 0.54 + pitch * 0.18 + armSwing * 0.10;
+        lShoulderY = 0.38; lShoulderZ = 0.08; lElbowX = 0.86;
       } else {
-        rShoulderX = 0.58 + pitch * 0.28 - armSwing * 0.25;
-        rShoulderY = -0.12;
-        rShoulderZ = 0.05;
-        rElbowX = 0.48;
+        /* Relaxed Tactical Pistol Low-Ready */
+        wx = 0.16; wy = 0.32 + gaitBob; wz = -0.30;
+        wrx = -0.42 + pitch * 0.2; wry = 0.18; wrz = -0.08;
+        rShoulderX = 0.54 - armSwing * 0.18; rShoulderY = -0.14; rElbowX = 0.68;
+        lShoulderX = -armSwing * 0.65; lShoulderY = 0.12; lElbowX = 0.35 + Math.max(0, -armSwing) * 0.4;
       }
-
       if (flashlightOn) {
-        lShoulderX = 1.42 + pitch * 0.68;
-        lShoulderY = -0.06;
-        lElbowX = 0.14;
-      } else if (weaponIndex === 1 && moveAmt < 0.9) {
-        /* Left hand supports rifle foregrip in low-ready */
-        lShoulderX = 0.62 + pitch * 0.25 - armSwing * 0.2;
-        lShoulderY = 0.38;
-        lElbowX = 0.52;
-      } else {
-        /* Natural left arm walk/sprint swing with elbow bend */
-        lShoulderX = -armSwing;
-        lShoulderZ = -0.04;
-        lElbowX = 0.24 + Math.max(0, -armSwing) * (isSprinting ? 0.85 : 0.45);
+        lShoulderX = 1.32 + pitch * 0.68; lShoulderY = -0.04; lElbowX = 0.18;
       }
     } else {
       /* Unarmed natural arm swing */
@@ -737,6 +854,16 @@
       rElbowX = 0.22 + Math.max(0, armSwing) * 0.55;
       lShoulderX = -armSwing;
       lElbowX = 0.22 + Math.max(0, -armSwing) * 0.55;
+    }
+
+    if (rig.weaponAnchor) {
+      rig.weaponAnchor.position.x = KC.lerp(rig.weaponAnchor.position.x, wx, 0.34);
+      rig.weaponAnchor.position.y = KC.lerp(rig.weaponAnchor.position.y, wy, 0.34);
+      rig.weaponAnchor.position.z = KC.lerp(rig.weaponAnchor.position.z, wz, 0.34);
+      rig.weaponAnchor.rotation.order = 'YXZ';
+      rig.weaponAnchor.rotation.x = KC.lerp(rig.weaponAnchor.rotation.x, wrx, 0.34);
+      rig.weaponAnchor.rotation.y = KC.lerp(rig.weaponAnchor.rotation.y, wry, 0.34);
+      rig.weaponAnchor.rotation.z = KC.lerp(rig.weaponAnchor.rotation.z, wrz, 0.34);
     }
 
     if (!onGround) {
