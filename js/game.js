@@ -229,6 +229,7 @@ const pointer = { locked: false, firing: false, aiming: false, sensitivity: 1.0 
 const raycaster = new THREE.Raycaster();
 
 const G = {
+  gameMode: 'gtb',
   mode: 'menu',
   sound: new SoundEngine(),
   city: null,
@@ -238,7 +239,9 @@ const G = {
 
 const WEAPONS = [
   { name: '9MM PISTOL', slot: '01', mag: 12, damage: 28, rate: 0.17, spread: 0.012, adsSpread: 0.004, moveSpread: 0.025, range: 105, falloff: 0.6, recoil: 0.014, recoilH: 0.006, reload: 1.25, sound: 'pistol', headMult: 2.4 },
-  { name: 'VECTOR CARBINE', slot: '02', mag: 24, damage: 34, rate: 0.095, spread: 0.0075, adsSpread: 0.002, moveSpread: 0.018, range: 165, falloff: 0.75, recoil: 0.009, recoilH: 0.004, reload: 1.65, sound: 'rifle', headMult: 2.6 }
+  { name: 'VECTOR CARBINE', slot: '02', mag: 24, damage: 34, rate: 0.095, spread: 0.0075, adsSpread: 0.002, moveSpread: 0.018, range: 165, falloff: 0.75, recoil: 0.009, recoilH: 0.004, reload: 1.65, sound: 'rifle', headMult: 2.6 },
+  { name: 'PUMP SHOTGUN', slot: '03', mag: 8, damage: 95, rate: 0.95, spread: 0.06, adsSpread: 0.035, moveSpread: 0.09, range: 55, falloff: 0.4, recoil: 0.022, recoilH: 0.012, reload: 2.4, sound: 'rifle', headMult: 1.6, pellets: 8 },
+  { name: 'SNIPER RIFLE', slot: '04', mag: 5, damage: 110, rate: 0.85, spread: 0.0015, adsSpread: 0.0005, moveSpread: 0.012, range: 280, falloff: 0.85, recoil: 0.025, recoilH: 0.008, reload: 2.8, sound: 'rifle', headMult: 3.5 }
 ];
 
 const ZOOM_LEVELS = [1.25, 2.0, 3.2];
@@ -344,7 +347,7 @@ const state = {
   policeTimer: 1.5,
   lastPoliceCar: -99,
   weapon: 0,
-  ammo: [12, 24],
+  ammo: [12, 24, 8, 5],
   fireTimer: 0,
   reloading: false,
   reloadTimer: 0,
@@ -1059,7 +1062,15 @@ function buildRifleView() {
 
 function setupWeapons() {
   if (weaponGroups.length) return;
-  weaponGroups.push(buildPistolView(), buildRifleView());
+  const pistol = buildPistolView();
+  const rifle = buildRifleView();
+  const shotgun = buildRifleView();
+  shotgun.userData.basePos = new THREE.Vector3(0.34, -0.24, -1.0);
+  shotgun.scale.setScalar(0.58);
+  const sniper = buildRifleView();
+  sniper.userData.basePos = new THREE.Vector3(0.36, -0.23, -1.12);
+  sniper.scale.setScalar(0.62);
+  weaponGroups.push(pistol, rifle, shotgun, sniper);
   for (const g of weaponGroups) {
     g.visible = false;
     weaponRoot.add(g);
@@ -3280,27 +3291,30 @@ function tryShoot() {
   updateHUD();
 
   const origin = camera.position.clone();
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  dir.x += rand(-1, 1) * effSpread;
-  dir.y += rand(-1, 1) * effSpread;
-  dir.z += rand(-1, 1) * effSpread;
-  dir.normalize();
-  raycaster.set(origin, dir);
-  raycaster.far = w.range;
-  const hits = raycaster.intersectObjects(getShootTargets(), false);
-  let end = origin.clone().addScaledVector(dir, w.range);
-  if (hits.length) {
-    const h = hits[0];
-    end = h.point.clone();
-    if (h.object.userData.actor) {
-      const actor = h.object.userData.actor;
-      const head = h.object.userData.part === 'head';
-      const dist = origin.distanceTo(h.point);
-      const falloff = clamp(1 - (dist / w.range) * (1 - (w.falloff || 0.6)), w.falloff || 0.6, 1);
-      const dmg = w.damage * (head ? (w.headMult || 2.4) : 1) * falloff;
-      damageActor(actor, dmg, h.point, head);
-    } else if (h.object.userData.car) {
+  const pellets = w.pellets || 1;
+  for (let pi = 0; pi < pellets; pi++) {
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    const pSpread = pellets > 1 ? effSpread * 2.2 : effSpread;
+    dir.x += rand(-1, 1) * pSpread;
+    dir.y += rand(-1, 1) * pSpread;
+    dir.z += rand(-1, 1) * pSpread;
+    dir.normalize();
+    raycaster.set(origin, dir);
+    raycaster.far = w.range;
+    const hits = raycaster.intersectObjects(getShootTargets(), false);
+    let end = origin.clone().addScaledVector(dir, w.range);
+    if (hits.length) {
+      const h = hits[0];
+      end = h.point.clone();
+      if (h.object.userData.actor) {
+        const actor = h.object.userData.actor;
+        const head = h.object.userData.part === 'head';
+        const dist = origin.distanceTo(h.point);
+        const falloff = clamp(1 - (dist / w.range) * (1 - (w.falloff || 0.6)), w.falloff || 0.6, 1);
+        const dmg = (w.damage / pellets) * (head ? (w.headMult || 2.4) : 1) * falloff;
+        damageActor(actor, dmg, h.point, head);
+      } else if (h.object.userData.car) {
       const hitCar = h.object.userData.car;
       spawnParticles(h.point.x, h.point.y, h.point.z, 0xffcf7a, 5, 3, 0.25, 8);
       addImpactFlash(h.point, 0xffb13b, 0.5);
@@ -3319,6 +3333,7 @@ function tryShoot() {
       G.sound.impact();
     }
   }
+  }
 
   let muzzle;
   if (player.cameraMode === '3p' && playerRig) {
@@ -3328,11 +3343,12 @@ function tryShoot() {
     const mx = lerp(0.23, 0.0, player.adsBlend);
     muzzle = camera.localToWorld(new THREE.Vector3(mx, -0.15, -0.85));
   }
-  addTracer(muzzle, end, 0xffd08a, 0.85);
+  const tracerEnd = origin.clone().addScaledVector(camera.getWorldDirection(new THREE.Vector3()), w.range);
+  addTracer(muzzle, tracerEnd, 0xffd08a, 0.85);
   combatFlashLight.position.copy(muzzle);
   combatFlashLight.intensity = 22;
 
-  if (KC.multiplayer) KC.multiplayer.broadcastShot(muzzle, end, 0xffd08a);
+  if (KC.multiplayer) KC.multiplayer.broadcastShot(muzzle, tracerEnd, 0xffd08a);
 
   scarePeds(player.pos.x, player.pos.z, 24);
   if (state.wanted === 0 && cops.some((c) => c.alive && dist2(c.group.position.x, c.group.position.z, player.pos.x, player.pos.z) < 30)) {
@@ -3723,6 +3739,8 @@ function buyShop(shop) {
     state.cash -= 60;
     state.ammo[0] = WEAPONS[0].mag;
     state.ammo[1] = WEAPONS[1].mag;
+    state.ammo[2] = WEAPONS[2].mag;
+    state.ammo[3] = WEAPONS[3].mag;
     notify('SHOP', 'ALL AMMO RESTOCKED', 'money');
     G.sound.money();
   }
@@ -3775,7 +3793,7 @@ function startReload() {
 }
 
 function switchWeapon(index) {
-  if (activeVehicle || index === state.weapon || index < 0 || index > 1) return;
+  if (activeVehicle || index === state.weapon || index < 0 || index > 3) return;
   state.weapon = index;
   state.reloading = false;
   state.fireTimer = 0.18;
@@ -5725,6 +5743,8 @@ function updateHUD() {
   if ($('weapon-bar-fill')) $('weapon-bar-fill').style.width = clamp(state.ammo[state.weapon] / weapon.mag * 100, 0, 100) + '%';
   if ($('slot-1')) $('slot-1').classList.toggle('active', state.weapon === 0);
   if ($('slot-2')) $('slot-2').classList.toggle('active', state.weapon === 1);
+  if ($('slot-3')) $('slot-3').classList.toggle('active', state.weapon === 2);
+  if ($('slot-4')) $('slot-4').classList.toggle('active', state.weapon === 3);
   const reloadHint = $('reload-hint');
   if (reloadHint) {
     reloadHint.classList.toggle('reloading', state.reloading);
@@ -5939,7 +5959,7 @@ function startGame() {
   state.policeTimer = 1.5;
   state.lastPoliceCar = -99;
   state.weapon = 0;
-  state.ammo = [12, 24];
+  state.ammo = [12, 24, 8, 5];
   state.fireTimer = 0;
   state.reloading = false;
   state.reloadTimer = 0;
@@ -6063,7 +6083,7 @@ function respawn() {
   state.lastPoliceCar = -99;
   state.reloading = false;
   state.fireTimer = 0;
-  state.ammo = [12, 24];
+  state.ammo = [12, 24, 8, 5];
   state.recoilPitch = 0;
   state.recoilYaw = 0;
   state.muzzleTimer = 0;
@@ -6419,6 +6439,22 @@ function wireUI() {
   wireCharacterModal();
   wireSessionModal();
   wireWorldSettingsModal();
+
+  const modeGtb = $('mode-gtb-btn');
+  const modeBf = $('mode-bf-btn');
+  function setMode(mode) {
+    G.gameMode = mode;
+    if (modeGtb) modeGtb.style.borderColor = mode === 'gtb' ? 'var(--amber)' : 'var(--line)';
+    if (modeGtb) modeGtb.style.color = mode === 'gtb' ? 'var(--amber)' : 'var(--cream-dim)';
+    if (modeBf) modeBf.style.borderColor = mode === 'bf' ? 'var(--amber)' : 'var(--line)';
+    if (modeBf) modeBf.style.color = mode === 'bf' ? 'var(--amber)' : 'var(--cream-dim)';
+    const label = $('btn-label') ? null : null;
+    const startLabel = document.querySelector('#start-btn .btn-label');
+    if (startLabel) startLabel.textContent = mode === 'bf' ? 'ENTER BATTLEFIELD' : 'ENTER THE CITY';
+  }
+  if (modeGtb) modeGtb.addEventListener('click', () => { setMode('gtb'); G.sound.ui(); });
+  if (modeBf) modeBf.addEventListener('click', () => { setMode('bf'); G.sound.ui(); });
+  setMode('gtb');
 
   $('start-btn').addEventListener('click', () => {
     if (G.mode !== 'menu') return;
