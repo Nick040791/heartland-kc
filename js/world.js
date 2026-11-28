@@ -946,7 +946,55 @@ KC.buildCity = function (scene) {
 };
 
 /* ============================================================
-   BATTLEFIELD MODE — large land/sea/air map with conquest zones
+   PS1 Procedural Pixel-Art Texture Helpers (NearestFilter)
+   ============================================================ */
+KC.makePS1Texture = function (w, h, drawFn, repX = 1, repY = 1) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d');
+  drawFn(ctx, w, h);
+  const t = new THREE.CanvasTexture(c);
+  if ('colorSpace' in t) t.colorSpace = THREE.SRGBColorSpace;
+  t.magFilter = THREE.NearestFilter;
+  t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repX, repY);
+  t.needsUpdate = true;
+  return t;
+};
+
+KC.makeCamoTexture = function (palette = ['#3b4931', '#283322', '#525838', '#1e241a']) {
+  return KC.makePS1Texture(32, 32, (ctx, w, h) => {
+    ctx.fillStyle = palette[0];
+    ctx.fillRect(0, 0, w, h);
+    let seed = 1337;
+    const rng = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+    for (let i = 0; i < 42; i++) {
+      ctx.fillStyle = palette[1 + Math.floor(rng() * (palette.length - 1))];
+      const x = Math.floor(rng() * w);
+      const y = Math.floor(rng() * h);
+      const bw = 3 + Math.floor(rng() * 7);
+      const bh = 2 + Math.floor(rng() * 6);
+      ctx.fillRect(x, y, bw, bh);
+      if (x + bw > w) ctx.fillRect(x - w, y, bw, bh);
+      if (y + bh > h) ctx.fillRect(x, y - h, bw, bh);
+    }
+    /* Subtle fabric weave grain */
+    for (let y = 0; y < h; y += 2) {
+      for (let x = 0; x < w; x += 2) {
+        ctx.fillStyle = (x + y) % 4 === 0 ? 'rgba(0,0,0,0.09)' : 'rgba(255,255,255,0.04)';
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }, 1, 1);
+};
+
+/* ============================================================
+   BATTLEFIELD MODE — Operation Heartland (Missouri Riverfront)
+   Full combined-arms land / sea / air conquest map overhaul
    ============================================================ */
 KC.buildBattlefield = function (scene) {
   const city = {
@@ -956,7 +1004,7 @@ KC.buildBattlefield = function (scene) {
     propColliders: [],
     destructibleProps: [],
     spatialGrid: new Map(),
-    gridCellSize: 24,
+    gridCellSize: 28,
     rayMeshes: [],
     blocks: [],
     landmarks: {},
@@ -980,16 +1028,56 @@ KC.buildBattlefield = function (scene) {
     zones: []
   };
 
-  /* Helpers */
-  function insertColliderToGrid(c) { /* noop for bf (no grid needed) */ }
+  /* Fast Spatial Collider Grid */
+  const cellSize = city.gridCellSize;
+  const gridKey = (cx, cz) => cx + ',' + cz;
+  function insertColliderToGrid(c) {
+    const minCX = Math.floor(c.minX / cellSize);
+    const maxCX = Math.floor(c.maxX / cellSize);
+    const minCZ = Math.floor(c.minZ / cellSize);
+    const maxCZ = Math.floor(c.maxZ / cellSize);
+    for (let cx = minCX; cx <= maxCX; cx++) {
+      for (let cz = minCZ; cz <= maxCZ; cz++) {
+        const k = gridKey(cx, cz);
+        let bucket = city.spatialGrid.get(k);
+        if (!bucket) { bucket = []; city.spatialGrid.set(k, bucket); }
+        bucket.push(c);
+      }
+    }
+  }
   city.insertColliderToGrid = insertColliderToGrid;
-  city.getNearbyColliders = function (x, z, r) { return city.colliders; };
+
+  const queryStamp = { v: 1 };
+  city.getNearbyColliders = function (x, z, r) {
+    const stamp = ++queryStamp.v;
+    const out = [];
+    const minCX = Math.floor((x - r) / cellSize);
+    const maxCX = Math.floor((x + r) / cellSize);
+    const minCZ = Math.floor((z - r) / cellSize);
+    const maxCZ = Math.floor((z + r) / cellSize);
+    for (let cx = minCX; cx <= maxCX; cx++) {
+      for (let cz = minCZ; cz <= maxCZ; cz++) {
+        const bucket = city.spatialGrid.get(gridKey(cx, cz));
+        if (!bucket) continue;
+        for (let i = 0; i < bucket.length; i++) {
+          const c = bucket[i];
+          if (c._q === stamp) continue;
+          c._q = stamp;
+          out.push(c);
+        }
+      }
+    }
+    return out;
+  };
+
   function addCollider(x, z, w, d, h = 10, tag = 'building') {
-    const c = { minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, x, z, w, d, h, tag, active: true };
+    const c = { minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, x, z, w, d, h, tag, active: true, _q: 0 };
     city.colliders.push(c);
+    insertColliderToGrid(c);
     return c;
   }
   city.addCollider = addCollider;
+
   const addBox = (w, h, d, mat, x, y, z, rotY = 0, opts = {}) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.set(x, y, z);
@@ -997,20 +1085,34 @@ KC.buildBattlefield = function (scene) {
     mesh.castShadow = opts.cast !== false;
     mesh.receiveShadow = opts.receive !== false;
     scene.add(mesh);
-    if (opts.ray) city.rayMeshes.push(mesh);
+    if (opts.ray !== false) city.rayMeshes.push(mesh);
+    if (opts.collide) {
+      /* Match exact world footprint for 90-degree rotations */
+      const swapped = Math.abs(Math.sin(rotY)) > 0.707;
+      addCollider(x, z, swapped ? d : w, swapped ? w : d, h, opts.tag || 'building');
+    }
     return mesh;
   };
   city.addBox = addBox;
+
   const addCylinder = (rt, rb, h, seg, mat, x, y, z, opts = {}) => {
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
     mesh.position.set(x, y, z);
     if (opts.rotY) mesh.rotation.y = opts.rotY;
+    if (opts.rotX) mesh.rotation.x = opts.rotX;
+    if (opts.rotZ) mesh.rotation.z = opts.rotZ;
     mesh.castShadow = opts.cast !== false;
+    mesh.receiveShadow = opts.receive !== false;
     scene.add(mesh);
-    if (opts.ray) city.rayMeshes.push(mesh);
+    if (opts.ray !== false) city.rayMeshes.push(mesh);
+    if (opts.collide) {
+      const r = Math.max(rt, rb) * 2;
+      addCollider(x, z, r, r, h, opts.tag || 'prop');
+    }
     return mesh;
   };
   city.addCylinder = addCylinder;
+
   const addSign = (text, color, x, y, z, rotY, w = 8, h = 2, opts = {}) => {
     const tex = KC.makeSignTexture(text, color, opts.bg || null);
     const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
@@ -1018,238 +1120,717 @@ KC.buildBattlefield = function (scene) {
     mesh.position.set(x, y, z);
     mesh.rotation.y = rotY;
     scene.add(mesh);
+    city.signs.push({ mesh, gmat: null, baseGlow: 0 });
     return mesh;
   };
   city.addSign = addSign;
+
   const glowTex = KC.makeGlowTexture();
   const poolTex = KC.makeLightPoolTexture();
   city.glowTex = glowTex;
   city.poolTex = poolTex;
-  const addGlowSprite = (color, x, y, z, scale, opacity = 0.5) => {
+
+  const addGlowSprite = (color, x, y, z, scale, opacity = 0.5, nightOnly = false) => {
     const mat = new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     const s = new THREE.Sprite(mat);
     s.position.set(x, y, z);
     s.scale.set(scale, scale, 1);
     scene.add(s);
+    if (nightOnly) city.lampGlows.push({ mat, baseOpacity: opacity });
     return s;
   };
   city.addGlowSprite = addGlowSprite;
+
   const addLightPool = (x, y, z, color, size, opacity = 0.24) => {
     const mat = new THREE.MeshBasicMaterial({ map: poolTex, color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(x, y, z);
     scene.add(mesh);
+    city.lightPools.push({ mat, baseOpacity: opacity });
     return mesh;
   };
   city.addLightPool = addLightPool;
   city.registerCullItem = function () {};
   city.createBuilding = function () {};
 
-  /* Materials */
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x3a4a30, roughness: 0.95 });
-  const sandMat = new THREE.MeshStandardMaterial({ color: 0xc9b07a, roughness: 0.95 });
-  const waterMat = new THREE.MeshStandardMaterial({ color: 0x1a3a5c, roughness: 0.2, metalness: 0.6, transparent: true, opacity: 0.85 });
-  const concreteMat = new THREE.MeshStandardMaterial({ color: 0x6a6a72, roughness: 0.8, metalness: 0.3 });
-  const metalMat = new THREE.MeshStandardMaterial({ color: 0x2a3a4a, roughness: 0.4, metalness: 0.7 });
+  /* ---------- Authentic PS1 Pixelated Procedural Materials ---------- */
+  const terrainTex = KC.makePS1Texture(64, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#334029';
+    ctx.fillRect(0, 0, w, h);
+    let s = 901;
+    const r = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+    const cols = ['#2b3622', '#3c4a30', '#42472d', '#293020', '#4a4632'];
+    for (let i = 0; i < 480; i++) {
+      ctx.fillStyle = cols[Math.floor(r() * cols.length)];
+      ctx.fillRect(Math.floor(r() * w), Math.floor(r() * h), 2 + Math.floor(r() * 4), 2 + Math.floor(r() * 4));
+    }
+  }, 44, 44);
 
-  city.materials = { waterTex: null, microBump: null };
+  const sandTex = KC.makePS1Texture(32, 32, (ctx, w, h) => {
+    ctx.fillStyle = '#8f8262';
+    ctx.fillRect(0, 0, w, h);
+    let s = 412;
+    const r = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+    for (let i = 0; i < 180; i++) {
+      ctx.fillStyle = r() < 0.5 ? '#7c7053' : '#a19474';
+      ctx.fillRect(Math.floor(r() * w), Math.floor(r() * h), 2, 2);
+    }
+  }, 6, 48);
 
-  /* Ground (large) */
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), groundMat);
+  const waterTex = KC.makePS1Texture(64, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#142a3d';
+    ctx.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 4) {
+      ctx.fillStyle = y % 8 === 0 ? '#1b3850' : '#102232';
+      ctx.fillRect(0, y, w, 2);
+      for (let x = 0; x < w; x += 10) {
+        ctx.fillStyle = 'rgba(130,175,210,0.14)';
+        ctx.fillRect((x + y * 3) % w, y, 5, 1);
+      }
+    }
+  }, 18, 40);
+
+  const concreteTex = KC.makePS1Texture(32, 32, (ctx, w, h) => {
+    ctx.fillStyle = '#5f6266';
+    ctx.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 8) {
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(0, y, w, 1);
+    }
+    for (let i = 0; i < 120; i++) {
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.08)';
+      ctx.fillRect((i * 19) % w, (i * 29) % h, 2, 2);
+    }
+  }, 2, 2);
+
+  const roadTex = KC.makePS1Texture(32, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#2b2d32';
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 160; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#24262b' : '#35383e';
+      ctx.fillRect((i * 17) % w, (i * 31) % h, 2, 2);
+    }
+    /* Edge lines */
+    ctx.fillStyle = '#7e7d75';
+    ctx.fillRect(2, 0, 1, h);
+    ctx.fillRect(w - 3, 0, 1, h);
+    /* Dashed yellow centerline */
+    ctx.fillStyle = '#c9a038';
+    ctx.fillRect(w / 2 - 1, 6, 2, 20);
+    ctx.fillRect(w / 2 - 1, 38, 2, 20);
+  }, 1, 20);
+
+  const runwayTex = KC.makePS1Texture(64, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#292c30';
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 200; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#23262a' : '#32363b';
+      ctx.fillRect((i * 23) % w, (i * 41) % h, 2, 3);
+    }
+    ctx.fillStyle = '#cfd3d8';
+    ctx.fillRect(4, 0, 2, h);
+    ctx.fillRect(w - 6, 0, 2, h);
+    ctx.fillRect(w / 2 - 2, 8, 4, 24);
+    ctx.fillRect(w / 2 - 2, 42, 4, 18);
+  }, 1, 9);
+
+  const sandbagTex = KC.makePS1Texture(32, 16, (ctx, w, h) => {
+    ctx.fillStyle = '#8b7b59';
+    ctx.fillRect(0, 0, w, h);
+    for (let row = 0; row < 4; row++) {
+      const y = row * 4;
+      const off = (row % 2) * 4;
+      for (let x = -4; x < w + 4; x += 8) {
+        ctx.fillStyle = (x + row) % 3 === 0 ? '#978663' : '#7f7050';
+        ctx.fillRect(x + off + 1, y + 1, 6, 3);
+        ctx.fillStyle = '#594e38';
+        ctx.fillRect(x + off, y, 8, 1);
+      }
+    }
+  }, 2, 1);
+
+  const makeContainerMat = (baseHex, darkHex) => {
+    const tex = KC.makePS1Texture(32, 16, (ctx, w, h) => {
+      ctx.fillStyle = baseHex;
+      ctx.fillRect(0, 0, w, h);
+      for (let x = 0; x < w; x += 4) {
+        ctx.fillStyle = darkHex;
+        ctx.fillRect(x, 0, 2, h);
+      }
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.fillRect(0, 0, w, 2);
+      ctx.fillRect(0, h - 2, w, 2);
+    }, 2, 1);
+    return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.78, metalness: 0.35, flatShading: true });
+  };
+
+  const groundMat = new THREE.MeshStandardMaterial({ map: terrainTex, roughness: 0.96, flatShading: true });
+  const sandMat = new THREE.MeshStandardMaterial({ map: sandTex, roughness: 0.95, flatShading: true });
+  const waterMat = new THREE.MeshStandardMaterial({ map: waterTex, color: 0x3b6787, roughness: 0.25, metalness: 0.55, transparent: true, opacity: 0.9 });
+  const concreteMat = new THREE.MeshStandardMaterial({ map: concreteTex, roughness: 0.88, metalness: 0.12, flatShading: true });
+  const darkConcreteMat = new THREE.MeshStandardMaterial({ map: concreteTex, color: 0x7a7e84, roughness: 0.9, metalness: 0.15, flatShading: true });
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0x38414a, roughness: 0.52, metalness: 0.65, flatShading: true });
+  const rustMat = new THREE.MeshStandardMaterial({ color: 0x5d3928, roughness: 0.88, metalness: 0.35, flatShading: true });
+  const oliveMat = new THREE.MeshStandardMaterial({ map: KC.makeCamoTexture(), roughness: 0.86, flatShading: true });
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x5b4632, roughness: 0.92, flatShading: true });
+  const sandbagMat = new THREE.MeshStandardMaterial({ map: sandbagTex, roughness: 0.96, flatShading: true });
+  const roadMat = new THREE.MeshStandardMaterial({ map: roadTex, roughness: 0.92, flatShading: true });
+  const runwayMat = new THREE.MeshStandardMaterial({ map: runwayTex, roughness: 0.9, flatShading: true });
+  const containerRed = makeContainerMat('#7a322c', '#59221d');
+  const containerBlue = makeContainerMat('#2b4a68', '#1d344a');
+  const containerOlive = makeContainerMat('#425134', '#2e3a24');
+  const containerTan = makeContainerMat('#8b7854', '#695a3d');
+  const lampBulbMat = new THREE.MeshBasicMaterial({ color: 0xffd39a, toneMapped: false });
+  city.lampBulbMat = lampBulbMat;
+  city.materials = { waterTex, microBump: null };
+
+  /* ---------- Terrain, Missouri River, Shoreline & Roads ---------- */
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(760, 760), groundMat);
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.06;
+  ground.position.set(45, -0.06, 0);
   ground.receiveShadow = true;
   scene.add(ground);
   city.rayMeshes.push(ground);
 
-  /* Sea on the west side */
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(300, 700), waterMat);
+  /* Missouri River (West side: x from -380 to -150) */
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(250, 780), waterMat);
   sea.rotation.x = -Math.PI / 2;
-  sea.position.set(-250, -0.3, 0);
+  sea.position.set(-275, -0.18, 0);
+  sea.receiveShadow = true;
   scene.add(sea);
   city.water = sea;
+  city.updaters.push((t) => {
+    waterTex.offset.y = (t * 0.035) % 1;
+    waterTex.offset.x = Math.sin(t * 0.4) * 0.02;
+  });
 
-  /* Beach / sand strip */
-  const beach = new THREE.Mesh(new THREE.PlaneGeometry(40, 700), sandMat);
+  /* Sandy/gravel river beach & embankment */
+  const beach = new THREE.Mesh(new THREE.PlaneGeometry(36, 760), sandMat);
   beach.rotation.x = -Math.PI / 2;
-  beach.position.set(-80, -0.02, 0);
+  beach.position.set(-148, -0.03, 0);
+  beach.receiveShadow = true;
   scene.add(beach);
 
-  /* Some hills / elevation via boxes */
-  for (let i = 0; i < 8; i++) {
-    const w = KC.rand(20, 60), h = KC.rand(3, 12), d = KC.rand(20, 60);
-    const x = KC.rand(-120, 120), z = KC.rand(-120, 120);
-    if (Math.abs(x) < 30 && Math.abs(z) < 30) continue;
-    const hill = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), groundMat);
-    hill.position.set(x, h / 2 - 0.1, z);
-    hill.receiveShadow = true;
-    hill.castShadow = true;
-    scene.add(hill);
-    city.rayMeshes.push(hill);
-    addCollider(x, z, w, d, h, 'hill');
+  /* Concrete river seawall segments (with open beach landing gaps) */
+  for (const seg of [{ z: -210, l: 110 }, { z: -55, l: 110 }, { z: 205, l: 130 }]) {
+    addBox(2.2, 1.4, seg.l, darkConcreteMat, -133, 0.65, seg.z, 0, { collide: true, tag: 'wall' });
   }
 
-  /* Bunkers / buildings */
-  for (let i = 0; i < 12; i++) {
-    const x = KC.rand(-180, 180), z = KC.rand(-180, 180);
-    if (Math.abs(x) < 40 && Math.abs(z) < 40) continue;
-    const w = KC.rand(8, 16), h = KC.rand(4, 9), d = KC.rand(8, 16);
-    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), concreteMat);
-    b.position.set(x, h / 2, z);
-    b.castShadow = true;
-    b.receiveShadow = true;
-    scene.add(b);
-    city.rayMeshes.push(b);
-    addCollider(x, z, w, d, h, 'building');
-    /* roof */
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.3, d + 0.4), metalMat);
-    roof.position.set(x, h + 0.15, z);
-    scene.add(roof);
+  /* Paved Main Highway (North-South at x = 20) & Crossroad (East-West at z = 0) */
+  const nsRoad = new THREE.Mesh(new THREE.PlaneGeometry(14, 460), roadMat);
+  nsRoad.rotation.x = -Math.PI / 2;
+  nsRoad.position.set(20, 0.015, 0);
+  nsRoad.receiveShadow = true;
+  scene.add(nsRoad);
+
+  const ewRoadTex = roadTex.clone();
+  ewRoadTex.needsUpdate = true;
+  ewRoadTex.repeat.set(1, 16);
+  const ewRoad = new THREE.Mesh(new THREE.PlaneGeometry(14, 340), new THREE.MeshStandardMaterial({ map: ewRoadTex, roughness: 0.92, flatShading: true }));
+  ewRoad.rotation.x = -Math.PI / 2;
+  ewRoad.rotation.z = Math.PI / 2;
+  ewRoad.position.set(20, 0.02, 0);
+  ewRoad.receiveShadow = true;
+  scene.add(ewRoad);
+
+  /* Spur roads to ECHO (south-east), ALPHA (north-west), DELTA (south-west), BRAVO (north-east) */
+  const addSpur = (x, z, w, d) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ color: 0x33353a, roughness: 0.95 }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(x, 0.012, z);
+    m.receiveShadow = true;
+    scene.add(m);
+  };
+  addSpur(72, 145, 108, 10);    /* Highway -> ECHO */
+  addSpur(-15, -185, 82, 10);   /* Highway -> ALPHA */
+  addSpur(-45, 110, 134, 10);   /* Highway -> DELTA */
+  addSpur(85, -105, 134, 10);   /* Highway -> BRAVO */
+  addSpur(105, 25, 165, 10);    /* Highway -> FOXTROT Airfield */
+
+  /* Helper: Floodlight Tower */
+  function addFloodlight(x, z, color = 0xffe4b2) {
+    addCylinder(0.14, 0.22, 9.5, 6, metalMat, x, 4.75, z, { collide: true, tag: 'prop' });
+    addBox(1.4, 0.38, 0.45, metalMat, x, 9.5, z);
+    const bulb = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.22, 0.16), lampBulbMat);
+    bulb.position.set(x, 9.45, z);
+    scene.add(bulb);
+    addGlowSprite(color, x, 9.4, z, 5.5, 0.42, true);
+    addLightPool(x, 0.06, z, color, 16, 0.22);
+    city.streetLamps.push({ x, z });
   }
 
-  /* Conquest zones */
+  /* Helper: Sandbag Cover Wall (exact axis-aligned collider) */
+  function addSandbagWall(x, z, len = 6, alongZ = false) {
+    const w = alongZ ? 0.9 : len;
+    const d = alongZ ? len : 0.9;
+    addBox(w, 1.15, d, sandbagMat, x, 0.575, z, 0, { collide: true, tag: 'prop' });
+  }
+
+  /* Helper: Guard Watchtower */
+  function addWatchtower(x, z) {
+    for (const ox of [-1.7, 1.7]) {
+      for (const oz of [-1.7, 1.7]) {
+        addBox(0.32, 6.2, 0.32, woodMat, x + ox, 3.1, z + oz, 0, { collide: true, tag: 'prop' });
+      }
+    }
+    addBox(4.2, 0.35, 4.2, woodMat, x, 6.1, z);
+    addBox(4.2, 1.1, 0.2, darkConcreteMat, x, 6.8, z - 2.0);
+    addBox(4.2, 1.1, 0.2, darkConcreteMat, x, 6.8, z + 2.0);
+    addBox(0.2, 1.1, 4.0, darkConcreteMat, x - 2.0, 6.8, z);
+    addBox(0.2, 1.1, 4.0, darkConcreteMat, x + 2.0, 6.8, z);
+    addBox(4.8, 0.28, 4.8, metalMat, x, 8.9, z);
+    addGlowSprite(0xff5b3a, x, 9.2, z, 2.2, 0.65, false);
+  }
+
+  /* Helper: Open-doorway Tactical Bunker (players can enter and shoot out!) */
+  function addBunker(x, z, w = 10, d = 8, h = 3.8, doorSide = 'south') {
+    const t = 0.65;
+    /* Roof */
+    addBox(w + 0.5, 0.55, d + 0.5, darkConcreteMat, x, h + 0.25, z);
+    /* Floor slab */
+    addBox(w, 0.14, d, concreteMat, x, 0.05, z);
+    /* North wall */
+    if (doorSide === 'north') {
+      addBox(w * 0.34, h, t, concreteMat, x - w * 0.33, h / 2, z - d / 2, 0, { collide: true });
+      addBox(w * 0.34, h, t, concreteMat, x + w * 0.33, h / 2, z - d / 2, 0, { collide: true });
+    } else {
+      addBox(w, h, t, concreteMat, x, h / 2, z - d / 2, 0, { collide: true });
+    }
+    /* South wall */
+    if (doorSide === 'south') {
+      addBox(w * 0.34, h, t, concreteMat, x - w * 0.33, h / 2, z + d / 2, 0, { collide: true });
+      addBox(w * 0.34, h, t, concreteMat, x + w * 0.33, h / 2, z + d / 2, 0, { collide: true });
+    } else {
+      addBox(w, h, t, concreteMat, x, h / 2, z + d / 2, 0, { collide: true });
+    }
+    /* West & East walls */
+    addBox(t, h, d, concreteMat, x - w / 2, h / 2, z, 0, { collide: true });
+    addBox(t, h, d, concreteMat, x + w / 2, h / 2, z, 0, { collide: true });
+  }
+
+  /* Helper: Helipad marking */
+  function addHelipad(x, z) {
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(8.5, 8.8, 0.2, 12), darkConcreteMat);
+    pad.position.set(x, 0.08, z);
+    pad.receiveShadow = true;
+    scene.add(pad);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(6.4, 7.2, 16), new THREE.MeshBasicMaterial({ color: 0xe6b43c, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(x, 0.2, z);
+    scene.add(ring);
+    const hMat = new THREE.MeshBasicMaterial({ color: 0xe6b43c, side: THREE.DoubleSide });
+    for (const ox of [-1.8, 1.8]) {
+      const bar = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 5.2), hMat);
+      bar.rotation.x = -Math.PI / 2; bar.position.set(x + ox, 0.21, z); scene.add(bar);
+    }
+    const cross = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 0.9), hMat);
+    cross.rotation.x = -Math.PI / 2; cross.position.set(x, 0.21, z); scene.add(cross);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      addGlowSprite(0xffb13b, x + Math.cos(a) * 8.2, 0.6, z + Math.sin(a) * 8.2, 1.8, 0.65, false);
+    }
+  }
+
+  /* ============================================================
+     SECTOR STRUCTURES (6 Handcrafted Tactical Zones)
+     ============================================================ */
+
+  /* --- 1. SECTOR ALPHA: NORTH FORTRESS (OPFOR MAIN BASE, x: -50, z: -185) --- */
+  addBunker(-68, -198, 14, 10, 4.2, 'south');
+  addBunker(-32, -198, 12, 9, 3.8, 'south');
+  addWatchtower(-82, -168);
+  addWatchtower(-18, -168);
+  /* Rotating Radar Dish on Alpha Bunker */
+  const radarPivot = new THREE.Group();
+  radarPivot.position.set(-68, 5.6, -198);
+  const dish = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 0.4, 1.2, 8), metalMat);
+  dish.rotation.x = Math.PI * 0.35;
+  radarPivot.add(dish);
+  scene.add(radarPivot);
+  city.updaters.push((t) => { radarPivot.rotation.y = t * 0.9; });
+  /* Perimeter blast walls with wide gates */
+  addBox(22, 3.0, 1.0, darkConcreteMat, -74, 1.5, -162, 0, { collide: true });
+  addBox(22, 3.0, 1.0, darkConcreteMat, -26, 1.5, -162, 0, { collide: true });
+  addSandbagWall(-50, -169, 8, false);
+  addHelipad(-88, -192);
+  addFloodlight(-50, -166, 0xff8a7a);
+  addSign('SECTOR ALPHA // FORTRESS', '#ff5b5b', -50, 5.2, -161.4, 0, 10, 2);
+
+  /* --- 2. SECTOR BRAVO: ARTILLERY RIDGE (EAST HIGH GROUND, x: 145, z: -105) --- */
+  /* Terraced low-poly rocky ridge backdrop (east side behind cover) */
+  addBox(22, 7.5, 42, groundMat, 182, 3.6, -105, 0, { collide: true, tag: 'hill' });
+  addBox(14, 4.2, 34, groundMat, 168, 2.0, -105, 0, { collide: true, tag: 'hill' });
+  /* Two 155mm Howitzer Artillery Emplacements */
+  for (const az of [-118, -92]) {
+    addSandbagWall(132, az, 9, true);
+    addSandbagWall(140, az - 5.5, 8, false);
+    addSandbagWall(140, az + 5.5, 8, false);
+    /* Gun carriage & long barrel */
+    addBox(2.6, 1.1, 3.2, oliveMat, 144, 0.9, az, 0, { collide: true, tag: 'prop' });
+    const barrel = addCylinder(0.22, 0.32, 7.2, 6, metalMat, 139.5, 2.1, az, { rotZ: Math.PI * 0.42 });
+    barrel.castShadow = true;
+  }
+  addBunker(154, -124, 10, 8, 3.6, 'south');
+  addWatchtower(158, -84);
+  addFloodlight(135, -105);
+
+  /* --- 3. SECTOR CHARLIE: INDUSTRIAL RAIL & WAREHOUSE DEPOT (CENTER, x: 0, z: 0) --- */
+  /* Large open-bay Industrial Warehouse (walk right through front/back & sides!) */
+  const whX = -26, whZ = -22;
+  addBox(24, 0.5, 20, darkConcreteMat, whX, 7.2, whZ); /* roof */
+  /* 4 structural corner walls leaving huge tactical entries */
+  addBox(6, 7.0, 0.8, concreteMat, whX - 9, 3.5, whZ - 9.6, 0, { collide: true });
+  addBox(6, 7.0, 0.8, concreteMat, whX + 9, 3.5, whZ - 9.6, 0, { collide: true });
+  addBox(6, 7.0, 0.8, concreteMat, whX - 9, 3.5, whZ + 9.6, 0, { collide: true });
+  addBox(6, 7.0, 0.8, concreteMat, whX + 9, 3.5, whZ + 9.6, 0, { collide: true });
+  addBox(0.8, 7.0, 5.5, concreteMat, whX - 11.6, 3.5, whZ - 6.8, 0, { collide: true });
+  addBox(0.8, 7.0, 5.5, concreteMat, whX - 11.6, 3.5, whZ + 6.8, 0, { collide: true });
+  addBox(0.8, 7.0, 5.5, concreteMat, whX + 11.6, 3.5, whZ - 6.8, 0, { collide: true });
+  addBox(0.8, 7.0, 5.5, concreteMat, whX + 11.6, 3.5, whZ + 6.8, 0, { collide: true });
+  addSign('KC RAIL DEPOT', '#ffb13b', whX, 6.2, whZ + 10.1, 0, 10, 1.8);
+
+  /* Rail tracks & 3 weathered steel boxcars running along x = -52 */
+  for (const rx of [-53.2, -50.8]) {
+    addBox(0.22, 0.12, 220, rustMat, rx, 0.06, 0, 0, { ray: false });
+  }
+  for (const bz of [-42, 8, 48]) {
+    addBox(3.4, 3.6, 14.5, bz === 8 ? containerRed : rustMat, -52, 2.0, bz, 0, { collide: true, tag: 'building' });
+    addBox(3.6, 0.25, 14.7, metalMat, -52, 3.9, bz);
+  }
+
+  /* Shipping Container CQB Yard around Central Plaza */
+  addBox(3.0, 2.9, 8.2, containerBlue, -16, 1.45, 22, 0, { collide: true });
+  addBox(3.0, 2.9, 8.2, containerRed, -16, 4.35, 22, 0); /* stacked top container */
+  addBox(8.2, 2.9, 3.0, containerOlive, 24, 1.45, 26, 0, { collide: true });
+  addBox(3.0, 2.9, 8.2, containerTan, 34, 1.45, -24, 0, { collide: true });
+  addBox(8.2, 2.9, 3.0, containerBlue, -28, 1.45, 36, 0, { collide: true });
+  addSandbagWall(0, -16, 8, false);
+  addSandbagWall(0, 16, 8, false);
+  addSandbagWall(-16, 0, 8, true);
+  addSandbagWall(16, 0, 8, true);
+  addFloodlight(12, 12);
+  addFloodlight(-12, -12);
+
+  /* --- 4. SECTOR DELTA: RIVERFRONT FUEL DOCKS (SOUTHWEST, x: -110, z: 110) --- */
+  /* 3 Industrial Fuel Storage Tanks */
+  for (const tz of [82, 100, 118]) {
+    addCylinder(5.2, 5.2, 8.5, 10, concreteMat, -90, 4.25, tz, { collide: true, tag: 'building' });
+    addCylinder(5.4, 5.4, 0.5, 10, rustMat, -90, 8.6, tz);
+  }
+  /* Naval Pier extending west into the Missouri River */
+  addBox(46, 0.65, 12, woodMat, -158, 0.45, 110);
+  for (let px = -140; px >= -178; px -= 9) {
+    addCylinder(0.35, 0.35, 2.2, 6, woodMat, px, -0.4, 104.5);
+    addCylinder(0.35, 0.35, 2.2, 6, woodMat, px, -0.4, 115.5);
+  }
+  /* Second Boat Dock to the north-west */
+  addBox(38, 0.65, 9, woodMat, -155, 0.45, -20);
+  /* Dockside Cargo Crane & Warehouse */
+  addBunker(-114, 134, 12, 9, 4.0, 'north');
+  addBox(8.2, 2.9, 3.0, containerRed, -120, 1.45, 92, 0, { collide: true });
+  addSandbagWall(-108, 96, 8, false);
+  addFloodlight(-134, 110, 0x7fd4ff);
+  addSign('MISSOURI RIVER DOCKS', '#65b8ff', -114, 5.0, 129.2, 0, 10, 1.8);
+
+  /* --- 5. SECTOR ECHO: ALLIED FORWARD OPERATING BASE / HQ (SOUTH-EAST, x: 120, z: 145) --- */
+  /* Perimeter walls leaving wide clear north & west exits */
+  addBox(26, 2.8, 1.0, darkConcreteMat, 96, 1.4, 118, 0, { collide: true });
+  addBox(26, 2.8, 1.0, darkConcreteMat, 144, 1.4, 118, 0, { collide: true });
+  addBox(1.0, 2.8, 42, darkConcreteMat, 166, 1.4, 146, 0, { collide: true });
+  addBox(56, 2.8, 1.0, darkConcreteMat, 126, 1.4, 174, 0, { collide: true });
+  /* Command Bunker & Medical Tent */
+  addBunker(146, 158, 12, 9, 4.0, 'north');
+  addBox(10, 3.4, 7, oliveMat, 98, 1.7, 160, 0, { collide: true, tag: 'building' });
+  /* Red cross decal on medical tent */
+  const crossMat = new THREE.MeshBasicMaterial({ color: 0xe63946 });
+  addBox(1.8, 0.5, 0.1, crossMat, 98, 2.2, 156.4, 0, { ray: false });
+  addBox(0.5, 1.8, 0.1, crossMat, 98, 2.2, 156.4, 0, { ray: false });
+  addWatchtower(84, 124);
+  addWatchtower(160, 124);
+  /* Dual Allied Helipads */
+  addHelipad(148, 134);
+  addHelipad(84, 152);
+  addFloodlight(120, 124, 0x8ad0ff);
+  addSign('FOB HEARTLAND // ECHO', '#65b8ff', 120, 5.2, 118.6, 0, 10, 2);
+
+  /* --- 6. SECTOR FOXTROT: HEARTLAND AIRFIELD (EAST FLIGHT LINE, x: 185, z: 25) --- */
+  /* Paved 180m Runway running North-South at x = 212 */
+  const runway = new THREE.Mesh(new THREE.PlaneGeometry(24, 190), runwayMat);
+  runway.rotation.x = -Math.PI / 2;
+  runway.position.set(212, 0.03, 25);
+  runway.receiveShadow = true;
+  scene.add(runway);
+  /* Runway edge lights */
+  for (let rz = -62; rz <= 112; rz += 22) {
+    addGlowSprite(0xffd266, 199.5, 0.55, rz, 1.5, 0.72, false);
+    addGlowSprite(0xffd266, 224.5, 0.55, rz, 1.5, 0.72, false);
+  }
+  /* Open-front Curved Aircraft Hangar (x: 162, z: 48) */
+  addBox(1.0, 7.5, 22, metalMat, 152, 3.75, 48, 0, { collide: true });
+  addBox(18, 7.5, 1.0, metalMat, 161, 3.75, 59, 0, { collide: true });
+  addBox(18, 7.5, 1.0, metalMat, 161, 3.75, 37, 0, { collide: true });
+  addBox(19, 0.6, 23, darkConcreteMat, 161, 7.6, 48);
+  /* Air Traffic Control Tower */
+  addBox(6.5, 11, 6.5, concreteMat, 164, 5.5, 6, 0, { collide: true });
+  addBox(8.2, 2.8, 8.2, new THREE.MeshStandardMaterial({ color: 0x1e4c44, emissive: 0x267565, emissiveIntensity: 0.45, roughness: 0.25, metalness: 0.7 }), 164, 12.2, 6);
+  addBox(8.8, 0.5, 8.8, metalMat, 164, 13.8, 6);
+  addGlowSprite(0x57e6c2, 164, 14.6, 6, 3.5, 0.75, false);
+  addSandbagWall(185, 8, 8, false);
+  addFloodlight(185, 25, 0xffd266);
+  addSign('HEARTLAND AIRFIELD', '#ffb13b', 164, 9.8, 2.6, 0, 8, 1.6);
+
+  /* ============================================================
+     CONQUEST ZONES (NO COLLIDERS! Pure Trigger Capture Radii)
+     ============================================================ */
   const zoneDefs = [
-    { name: 'ALPHA', x: -120, z: -180, color: 0xd94a4a },
-    { name: 'BRAVO', x: 120, z: -120, color: 0x888888 },
-    { name: 'CHARLIE', x: 0, z: 0, color: 0x888888 },
-    { name: 'DELTA', x: -120, z: 120, color: 0x888888 },
-    { name: 'ECHO', x: 120, z: 120, color: 0x4a90d9 },
-    { name: 'FOXTROT', x: 0, z: 180, color: 0x888888 }
+    { name: 'ALPHA', code: 'A', label: 'NORTH FORTRESS', x: -50, z: -185, owner: 'enemy', color: 0xd94a4a, spawnOffsets: [[0, 12], [-10, 10], [10, 10], [0, -10]] },
+    { name: 'BRAVO', code: 'B', label: 'ARTILLERY RIDGE', x: 145, z: -105, owner: 'neutral', color: 0x9aa4b2, spawnOffsets: [[-14, 0], [-12, 10], [-12, -10], [0, 14]] },
+    { name: 'CHARLIE', code: 'C', label: 'RAIL DEPOT', x: 0, z: 0, owner: 'neutral', color: 0x9aa4b2, spawnOffsets: [[8, 8], [-8, 8], [8, -8], [-8, -8]] },
+    { name: 'DELTA', code: 'D', label: 'RIVER DOCKS', x: -110, z: 110, owner: 'neutral', color: 0x9aa4b2, spawnOffsets: [[8, -8], [10, 6], [-8, -10], [-10, 6]] },
+    { name: 'ECHO', code: 'E', label: 'FOB HEARTLAND', x: 120, z: 145, owner: 'player', color: 0x4a90d9, spawnOffsets: [[0, -10], [-10, -8], [10, -8], [0, 10]] },
+    { name: 'FOXTROT', code: 'F', label: 'AIRFIELD', x: 185, z: 25, owner: 'neutral', color: 0x9aa4b2, spawnOffsets: [[-10, 0], [-8, -10], [-8, 10], [8, 0]] }
   ];
+
   for (const z of zoneDefs) {
-    const zone = { name: z.name, x: z.x, z: z.z, radius: 18, owner: z.color === 0x4a90d9 ? 'player' : z.color === 0xd94a4a ? 'enemy' : 'neutral', progress: 0, capturing: null, mesh: null, flag: null };
-    /* Zone circle on ground */
-    const circle = new THREE.Mesh(new THREE.CircleGeometry(zone.radius, 32), new THREE.MeshBasicMaterial({ color: z.color, transparent: true, opacity: 0.25, side: THREE.DoubleSide, toneMapped: false }));
+    const zone = {
+      name: z.name,
+      code: z.code,
+      label: z.label,
+      x: z.x,
+      z: z.z,
+      radius: 18,
+      owner: z.owner,
+      progress: z.owner === 'player' ? 1 : z.owner === 'enemy' ? -1 : 0,
+      capturing: null,
+      spawnOffsets: z.spawnOffsets,
+      mesh: null,
+      ring: null,
+      flag: null
+    };
+
+    /* Subtle ground tactical capture ring + translucent zone fill */
+    const circle = new THREE.Mesh(
+      new THREE.CircleGeometry(zone.radius, 32),
+      new THREE.MeshBasicMaterial({ color: z.color, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false, toneMapped: false })
+    );
     circle.rotation.x = -Math.PI / 2;
-    circle.position.set(z.x, 0.05, z.z);
+    circle.position.set(z.x, 0.055, z.z);
     scene.add(circle);
-    /* Flag pole */
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 6, 6), metalMat);
-    pole.position.set(z.x, 3, z.z);
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(zone.radius - 0.55, zone.radius, 32),
+      new THREE.MeshBasicMaterial({ color: z.color, transparent: true, opacity: 0.65, side: THREE.DoubleSide, depthWrite: false, toneMapped: false })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(z.x, 0.065, z.z);
+    scene.add(ring);
+
+    /* Concrete flag pedestal (tiny visual center, NO giant zone collider!) */
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.1, 0.35, 8), darkConcreteMat);
+    base.position.set(z.x, 0.175, z.z);
+    scene.add(base);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 9.5, 6), metalMat);
+    pole.position.set(z.x, 4.9, z.z);
     scene.add(pole);
-    const flag = new THREE.Mesh(new THREE.PlaneGeometry(3, 2), new THREE.MeshBasicMaterial({ color: z.color, side: THREE.DoubleSide, toneMapped: false }));
-    flag.position.set(z.x + 1.6, 5.2, z.z);
+    const flag = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.8, 2.2),
+      new THREE.MeshBasicMaterial({ color: z.color, side: THREE.DoubleSide, toneMapped: false })
+    );
+    flag.position.set(z.x + 1.95, 8.2, z.z);
     scene.add(flag);
+
+    /* Beacon light atop flagpole for long-range orientation */
+    const beacon = addGlowSprite(z.color, z.x, 9.8, z.z, 3.6, 0.65, false);
+
+    /* Gentle waving flag animation */
+    city.updaters.push((t) => {
+      flag.rotation.y = Math.sin(t * 3.1 + z.x * 0.05) * 0.22;
+      beacon.material.color.copy(flag.material.color);
+    });
+
     zone.mesh = circle;
+    zone.ring = ring;
     zone.flag = flag;
     zone.flagColor = z.color;
     city.zones.push(zone);
-    addCollider(z.x, z.z, zone.radius * 2, zone.radius * 2, 1, 'zone');
-  }
-  city.zones = city.zones || [];
-
-  /* Attachment pickups */
-  city.attachmentPickups = [];
-  const attTypes = ['scope', 'grip', 'silencer', 'extmag'];
-  const attColors = { scope: 0x4a90d9, grip: 0x57e6c2, silencer: 0x888888, extmag: 0xffb13b };
-  for (let i = 0; i < 20; i++) {
-    const x = KC.rand(-220, 220), z = KC.rand(-220, 220);
-    if (Math.abs(x) < 20 && Math.abs(z) < 20) continue;
-    const type = KC.pick(attTypes);
-    const col = attColors[type];
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.6, metalness: 0.5, roughness: 0.3 }));
-    mesh.position.set(x, 0.8, z);
-    scene.add(mesh);
-    city.attachmentPickups.push({ x, z, type, mesh, picked: false });
   }
 
-  /* Vehicle spawns */
-  city.vehicleSpots = [];
-  /* Land vehicles */
-  city.vehicleSpots.push({ type: 'car', x: -60, z: -60, heading: 0, color: 0x2b4b7a, kind: 'parked' });
-  city.vehicleSpots.push({ type: 'car', x: 60, z: -60, heading: 0, color: 0xa32b2b, kind: 'parked' });
-  city.vehicleSpots.push({ type: 'car', x: -60, z: 60, heading: 0, color: 0x3b6b56, kind: 'parked' });
-  city.vehicleSpots.push({ type: 'car', x: 60, z: 60, heading: 0, color: 0x8d7c3c, kind: 'parked' });
-  /* Helis */
-  city.vehicleSpots.push({ type: 'heli', x: -180, z: 0, heading: 0, color: 0x1a3a5c, kind: 'parked' });
-  city.vehicleSpots.push({ type: 'heli', x: 180, z: 0, heading: Math.PI, color: 0x2b4b7a, kind: 'parked' });
-  /* Planes */
-  city.vehicleSpots.push({ type: 'plane', x: 0, z: -200, heading: 0, color: 0xd8d0c0, kind: 'parked' });
-  /* Boats */
-  city.vehicleSpots.push({ type: 'boat', x: -230, z: 0, heading: 0, color: 0xd8d0c0, kind: 'parked' });
-  city.vehicleSpots.push({ type: 'boat', x: -230, z: 80, heading: 0, color: 0x2b4b7a, kind: 'parked' });
+  /* ============================================================
+     STRATEGIC COVER, TREES, TANK TRAPS & WEAPON ATTACHMENTS
+     ============================================================ */
+  /* Tactical Roadblocks & Jersey Barriers along main approaches (strictly axis-aligned!) */
+  const roadBlocks = [
+    { x: 14, z: -72, w: 6.5, d: 0.9 },
+    { x: 26, z: -48, w: 6.5, d: 0.9 },
+    { x: 14, z: 54, w: 6.5, d: 0.9 },
+    { x: 26, z: 82, w: 6.5, d: 0.9 },
+    { x: -64, z: -6, w: 0.9, d: 6.5 },
+    { x: 76, z: 6, w: 0.9, d: 6.5 },
+    { x: 58, z: -58, w: 7.0, d: 0.9 },
+    { x: -58, z: 68, w: 7.0, d: 0.9 }
+  ];
+  for (const rb of roadBlocks) {
+    addBox(rb.w, 1.15, rb.d, darkConcreteMat, rb.x, 0.575, rb.z, 0, { collide: true, tag: 'prop' });
+  }
 
-  /* Spawn points (player team on south, enemy on north) */
-  city.spawnPoints = {
-    player: [{ x: 120, z: 120 }, { x: 100, z: 100 }, { x: 140, z: 100 }],
-    enemy: [{ x: -120, z: -180 }, { x: -100, z: -160 }, { x: -140, z: -160 }]
+  /* Czech Hedgehog Anti-Tank Obstacles along the Missouri River Beach */
+  for (let hz = -120; hz <= 70; hz += 28) {
+    const hx = -139 + (hz % 56 === 0 ? -4 : 3);
+    const hg = new THREE.Group();
+    hg.position.set(hx, 0.85, hz);
+    for (let i = 0; i < 3; i++) {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.2, 0.18), rustMat);
+      beam.rotation.set(i === 0 ? 0.7 : -0.7, i * 1.05, 0.7);
+      hg.add(beam);
+    }
+    scene.add(hg);
+    addCollider(hx, hz, 1.6, 1.6, 1.6, 'prop');
+  }
+
+  /* Curated Low-Poly Pine & Woodland Groves (never overlapping roads, zones, or runway!) */
+  const pineMat1 = new THREE.MeshStandardMaterial({ color: 0x223822, roughness: 0.94, flatShading: true });
+  const pineMat2 = new THREE.MeshStandardMaterial({ color: 0x2c4628, roughness: 0.94, flatShading: true });
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x433322, roughness: 0.95, flatShading: true });
+  const groveCenters = [
+    [-95, -90], [-85, -35], [-80, 42], [72, -165], [88, -42],
+    [76, 78], [-35, 168], [32, -140], [132, -32], [-108, -142]
+  ];
+  let treeSeed = 2026;
+  const trand = (a, b) => {
+    treeSeed = (treeSeed * 16807) % 2147483647;
+    return a + ((treeSeed - 1) / 2147483646) * (b - a);
   };
+  for (const [gx, gz] of groveCenters) {
+    for (let i = 0; i < 6; i++) {
+      const tx = gx + trand(-20, 20);
+      const tz = gz + trand(-20, 20);
+      /* Keep clear of zones, highway, and runway */
+      if (tx < -126 || tx > 192) continue;
+      if (Math.abs(tx - 20) < 12 || Math.abs(tz) < 12) continue;
+      let tooClose = false;
+      for (const z of city.zones) if (KC.dist2(tx, tz, z.x, z.z) < 26) tooClose = true;
+      if (tooClose) continue;
+      const h = trand(3.8, 6.2);
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.34, h * 0.45, 5), trunkMat);
+      trunk.position.set(tx, h * 0.22, tz);
+      trunk.castShadow = true;
+      scene.add(trunk);
+      const cone1 = new THREE.Mesh(new THREE.ConeGeometry(trand(1.8, 2.8), h * 0.65, 6), i % 2 === 0 ? pineMat1 : pineMat2);
+      cone1.position.set(tx, h * 0.58, tz);
+      cone1.castShadow = true;
+      scene.add(cone1);
+      const cone2 = new THREE.Mesh(new THREE.ConeGeometry(trand(1.2, 2.0), h * 0.5, 6), pineMat2);
+      cone2.position.set(tx, h * 0.92, tz);
+      cone2.castShadow = true;
+      scene.add(cone2);
+      addCollider(tx, tz, 0.7, 0.7, 3.5, 'tree');
+    }
+  }
 
-  /* Enemy soldiers (thugs) defending north zones */
+  /* Strategic Weapon Attachment Caches placed inside/near sectors */
+  city.attachmentPickups = [];
+  const attColors = { scope: 0x4a90d9, grip: 0x57e6c2, silencer: 0x9aa4b2, extmag: 0xffb13b };
+  const attSpots = [
+    { x: 112, z: 138, type: 'scope' },
+    { x: 128, z: 138, type: 'grip' },
+    { x: 116, z: 156, type: 'silencer' },
+    { x: 124, z: 156, type: 'extmag' },
+    { x: -18, z: -18, type: 'extmag' },
+    { x: 14, z: 14, type: 'grip' },
+    { x: 140, z: -96, type: 'scope' },
+    { x: 152, z: -116, type: 'silencer' },
+    { x: -102, z: 104, type: 'grip' },
+    { x: -116, z: 122, type: 'extmag' },
+    { x: 174, z: 42, type: 'scope' },
+    { x: 174, z: 12, type: 'silencer' },
+    { x: -42, z: -176, type: 'extmag' },
+    { x: -62, z: -192, type: 'scope' }
+  ];
+  for (const a of attSpots) {
+    const col = attColors[a.type];
+    const crate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.7, 0.45, 0.5),
+      new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.65, metalness: 0.45, roughness: 0.35, flatShading: true })
+    );
+    crate.position.set(a.x, 0.7, a.z);
+    scene.add(crate);
+    city.attachmentPickups.push({ x: a.x, z: a.z, type: a.type, mesh: crate, picked: false });
+  }
+
+  /* ============================================================
+     COMBINED-ARMS VEHICLES (Humvees, Helicopters, Plane, Boats)
+     ============================================================ */
+  city.parkedSpots = [
+    /* Allied FOB Motorpool (ECHO) */
+    { x: 106, z: 132, heading: Math.PI, color: 0x4a5a3a, style: 'humvee', kind: 'parked' },
+    { x: 134, z: 132, heading: Math.PI, color: 0x3b4d38, style: 'humvee', kind: 'parked' },
+    /* Central Rail Depot & Roads */
+    { x: 24, z: 36, heading: 0, color: 0x7b6d4c, style: 'humvee', kind: 'parked' },
+    { x: 16, z: -56, heading: Math.PI, color: 0x4a5240, style: 'humvee', kind: 'parked' },
+    /* Bravo Artillery Ridge & Delta Docks */
+    { x: 124, z: -105, heading: Math.PI / 2, color: 0x5c533e, style: 'humvee', kind: 'parked' },
+    { x: -102, z: 96, heading: 0, color: 0x3a4a5c, style: 'suv', kind: 'parked' },
+    /* Opfor Fortress (ALPHA) */
+    { x: -42, z: -172, heading: 0, color: 0x3d3632, style: 'humvee', kind: 'parked' },
+    { x: -58, z: -172, heading: 0, color: 0x4a3230, style: 'armored', kind: 'parked' }
+  ];
+
+  city.vehicleSpots = [
+    /* Attack Helicopters on Marked Helipads */
+    { type: 'heli', x: 148, z: 134, heading: 0, color: 0x324634, kind: 'parked' },
+    { type: 'heli', x: 84, z: 152, heading: 0.35, color: 0x2a3f54, kind: 'parked' },
+    { type: 'heli', x: -88, z: -192, heading: Math.PI, color: 0x423838, kind: 'parked' },
+    /* Fighter / Recon Planes on Airfield Runway */
+    { type: 'plane', x: 212, z: 92, heading: 0, color: 0x7a8590, kind: 'parked' },
+    { type: 'plane', x: 212, z: -42, heading: Math.PI, color: 0x5c6654, kind: 'parked' },
+    /* Patrol Gunboats moored along River Docks */
+    { type: 'boat', x: -186, z: 100, heading: 0, color: 0x3a4a58, kind: 'parked' },
+    { type: 'boat', x: -186, z: 122, heading: 0, color: 0x4a5846, kind: 'parked' },
+    { type: 'boat', x: -182, z: -20, heading: Math.PI, color: 0x524444, kind: 'parked' }
+  ];
+
+  /* Safe Spawn Points (clear of flagpoles, walls, and obstacles) */
+  city.spawnPoints = {
+    player: [{ x: 120, z: 135 }, { x: 110, z: 137 }, { x: 130, z: 137 }],
+    enemy: [{ x: -50, z: -173 }, { x: -40, z: -175 }, { x: -60, z: -175 }]
+  };
   city.enemySpawns = city.spawnPoints.enemy.slice();
 
-  /* Map data for minimap */
+  /* Rich Tactical Map Data for Minimap & Deployment Map */
   city.mapData = {
-    bounds: 260,
+    mode: 'bf',
+    bounds: 262,
+    riverMaxX: -145,
+    beachMaxX: -130,
     lines: [],
-    blocks: [],
-    water: { minZ: -350, maxZ: -200 },
-    districts: [
-      { name: 'SECTOR ALPHA', x: -120, z: -120 },
-      { name: 'SECTOR BRAVO', x: 120, z: -120 },
-      { name: 'SECTOR CHARLIE', x: 0, z: 0 },
-      { name: 'SECTOR DELTA', x: -120, z: 120 },
-      { name: 'SECTOR ECHO', x: 120, z: 120 }
+    roads: [
+      { x1: 20, z1: -230, x2: 20, z2: 230, w: 14 },
+      { x1: -150, z1: 0, x2: 190, z2: 0, w: 14 },
+      { x1: 20, z1: 145, x2: 126, z2: 145, w: 10 },
+      { x1: -56, z1: -185, x2: 20, z2: -185, w: 10 },
+      { x1: -112, z1: 110, x2: 20, z2: 110, w: 10 },
+      { x1: 20, z1: -105, x2: 152, z2: -105, w: 10 },
+      { x1: 20, z1: 25, x2: 190, z2: 25, w: 10 }
     ],
-    landmarkLabels: zoneDefs.map((z) => ({ label: z.name, x: z.x, z: z.z }))
+    runway: { x: 212, z: 25, w: 24, d: 190 },
+    blocks: [],
+    structures: [
+      { x: -26, z: -22, w: 24, d: 20 },
+      { x: -68, z: -198, w: 14, d: 10 },
+      { x: 146, z: 158, w: 12, d: 9 },
+      { x: 161, z: 48, w: 18, d: 22 },
+      { x: -158, z: 110, w: 46, d: 12 }
+    ],
+    water: { minZ: -999, maxZ: -999 },
+    districts: zoneDefs.map((z) => ({ name: z.name + ' · ' + z.label, x: z.x, z: z.z })),
+    landmarkLabels: zoneDefs.map((z) => ({ label: z.code + ' · ' + z.name, x: z.x, z: z.z }))
   };
 
-  /* Store landmarks for minimap */
   city.landmarks = {};
   for (const z of zoneDefs) {
     city.landmarks[z.name] = { x: z.x, z: z.z, marker: { x: z.x, z: z.z }, label: z.name };
   }
-
-  /* Extra battlefield detail: trees, crates, barriers */
-  const treeMat = new THREE.MeshStandardMaterial({ color: 0x2a4a2a, roughness: 0.9, flatShading: true });
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.9 });
-  for (let i = 0; i < 60; i++) {
-    const x = KC.rand(-220, 220), z = KC.rand(-220, 220);
-    if (Math.abs(x) < 30 && Math.abs(z) < 30) continue;
-    if (x < -60) continue; /* keep sea side clear */
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, KC.rand(2, 4), 6), trunkMat);
-    trunk.position.set(x, 1.5, z);
-    scene.add(trunk);
-    const canopy = new THREE.Mesh(new THREE.DodecahedronGeometry(KC.rand(2, 4), 0), treeMat);
-    canopy.position.set(x, KC.rand(4, 7), z);
-    scene.add(canopy);
-  }
-  for (let i = 0; i < 25; i++) {
-    const x = KC.rand(-200, 200), z = KC.rand(-200, 200);
-    const crate = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 1.4), concreteMat);
-    crate.position.set(x, 0.7, z);
-    crate.rotation.y = KC.rand(0, Math.PI);
-    scene.add(crate);
-    addCollider(x, z, 1.4, 1.4, 1.4, 'prop');
-  }
-  for (let i = 0; i < 15; i++) {
-    const x = KC.rand(-200, 200), z = KC.rand(-200, 200);
-    const barrier = new THREE.Mesh(new THREE.BoxGeometry(KC.rand(4, 8), 0.6, 0.4), concreteMat);
-    barrier.position.set(x, 0.3, z);
-    barrier.rotation.y = KC.rand(0, Math.PI);
-    scene.add(barrier);
-    addCollider(x, z, 6, 0.4, 0.6, 'prop');
-  }
-
-  /* Lights */
-  const sun = new THREE.DirectionalLight(0xfff0d0, 1.6);
-  sun.position.set(80, 120, 60);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.left = -200; sun.shadow.camera.right = 200;
-  sun.shadow.camera.top = 200; sun.shadow.camera.bottom = -200;
-  sun.shadow.camera.near = 5; sun.shadow.camera.far = 400;
-  scene.add(sun);
-  scene.add(sun.target);
-  const hemi = new THREE.HemisphereLight(0x88aaff, 0x223322, 0.7);
-  scene.add(hemi);
-  const amb = new THREE.AmbientLight(0x445566, 0.5);
-  scene.add(amb);
-
-  /* Sky */
-  scene.background = new THREE.Color(0x87ceeb);
-  scene.fog = new THREE.FogExp2(0x87ceeb, 0.0015);
 
   return city;
 };

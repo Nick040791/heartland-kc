@@ -35,8 +35,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .hidden { display: none !important; }
 
 #app, #viewport { position: fixed; inset: 0; }
-#viewport canvas { display: block; width: 100% !important; height: 100% !important; image-rendering: pixelated; image-rendering: crisp-edges; filter: contrast(1.08) saturate(0.85) brightness(0.96); }
-#ps1-dither { position: fixed; inset: 0; z-index: 5; pointer-events: none; mix-blend-mode: overlay; opacity: 0.18; background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0.35) 0px, rgba(0,0,0,0.35) 1px, transparent 1px, transparent 2px), repeating-linear-gradient(90deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 2px); background-size: 2px 2px; }
+#viewport canvas { display: block; width: 100% !important; height: 100% !important; image-rendering: pixelated; image-rendering: crisp-edges; }
+#ps1-dither { display: none; }
 #viewport { background: #0b0a0e; }
 
 #fx { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
@@ -512,4 +512,72 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; background: v
   .hud-bottom-right { bottom: 14px; }
   .menu-header .build { display: none; }
   .menu-footer span:first-child { display: none; }
+}
+
+/* ============ BATTLEFIELD CONQUEST TOP BAR ============ */
+.bf-hud-bar {
+  position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 14px;
+  padding: 7px 14px;
+  background: rgba(10, 11, 16, 0.82);
+  border: 1px solid rgba(242, 232, 213, 0.22);
+  border-top: 2px solid var(--amber);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+}
+.bf-team { display: flex; align-items: center; gap: 8px; font-family: var(--condensed); letter-spacing: 0.12em; }
+.bf-team-tag { font-size: 13px; color: var(--cream-dim); }
+.bf-blue strong { color: #65b8ff; font-size: 20px; min-width: 30px; text-align: right; }
+.bf-red strong { color: #ff5b5b; font-size: 20px; min-width: 30px; text-align: left; }
+.bf-ticket-track { width: 88px; height: 6px; background: rgba(255,255,255,0.12); overflow: hidden; }
+.bf-ticket-fill { height: 100%; transition: width 0.25s ease; }
+.bf-ticket-fill.blue { background: linear-gradient(90deg, #2b6cb0, #65b8ff); }
+.bf-ticket-fill.red { background: linear-gradient(90deg, #ff5b5b, #9b2226); float: right; }
+.bf-flags-row { display: flex; gap: 5px; }
+.bf-flag-pill {
+  width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+  font-family: var(--condensed); font-size: 15px; font-weight: 700;
+  border: 1px solid rgba(255,255,255,0.28); background: rgba(24,26,34,0.85); color: var(--cream);
+  transition: transform 0.15s, background 0.2s, border-color 0.2s;
+}
+.bf-flag-pill.player { background: rgba(45, 116, 206, 0.85); border-color: #82c6ff; color: #fff; }
+.bf-flag-pill.enemy { background: rgba(196, 48, 48, 0.85); border-color: #ff8585; color: #fff; }
+.bf-flag-pill.contested { animation: pulse 0.75s infinite; border-color: var(--amber); }
+
+/* ============ TACTICAL DEPLOYMENT & ROLEPLAY MENUS ============ */
+.deploy-panel { width: min(760px, 95vw) !important; max-width: 760px; text-align: left; }
+.deploy-grid { display: grid; grid-template-columns: 320px 1fr; gap: 18px; margin: 12px 0; align-items: start; }
+.deploy-map-col { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+#deploy-map {
+  width: 320px; height: 320px; border: 1px solid rgba(242,232,213,0.28);
+  background: #080a0f; cursor: crosshair; image-rendering: pixelated;
+}
+.deploy-legend { display: flex; gap: 12px; font-size: 10px; letter-spacing: 0.16em; }
+.leg-blue { color: #65b8ff; }
+.leg-neutral { color: #a5b0be; }
+.leg-red { color: #ff5b5b; }
+.deploy-section-label { font-size: 10px; letter-spacing: 0.24em; color: var(--amber); font-weight: 700; margin-bottom: 6px; }
+.bf-class-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.bf-class-btn {
+  display: flex; flex-direction: column; align-items: flex-start; padding: 7px 10px !important;
+  font-size: 12px !important; line-height: 1.15; text-align: left;
+}
+.bf-class-btn small { font-size: 9px; letter-spacing: 0.1em; color: var(--cream-dim); margin-top: 2px; font-family: var(--ui); }
+.bf-class-btn.active, .rp-role-opt.active { border-color: var(--amber) !important; color: var(--amber) !important; background: rgba(255, 177, 59, 0.12) !important; }
+.spawn-list-grid { display: grid; grid-template-columns: 1fr; gap: 6px; max-height: 195px; overflow-y: auto; }
+.spawn-btn {
+  display: flex !important; justify-content: space-between; align-items: center;
+  width: 100%; padding: 8px 12px !important; font-size: 12px !important;
+  border-color: rgba(101, 184, 255, 0.55) !important; background: rgba(40, 88, 150, 0.22) !important;
+}
+.spawn-btn:hover { background: rgba(65, 130, 210, 0.38) !important; border-color: #82c6ff !important; }
+.rp-role-badge {
+  margin-top: 4px; font-size: 10px; letter-spacing: 0.22em; color: var(--teal);
+  font-weight: 700; text-align: right;
+}
+.rp-action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.rp-act-btn { padding: 8px 10px !important; font-size: 11px !important; width: 100%; }
+@media (max-width: 780px) {
+  .deploy-grid { grid-template-columns: 1fr; }
+  #deploy-map { width: 260px; height: 260px; }
+  .bf-ticket-track { width: 48px; }
 }

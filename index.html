@@ -50,11 +50,27 @@
       <div class="hud-top-right">
         <div class="cash" id="cash">$0</div>
         <div class="clock" id="clock">19:30 · DUSK · CLEAR</div>
+        <div class="rp-role-badge" id="rp-role-badge">ROLE: STREET RUNNER</div>
         <div class="wanted" id="wanted">
           <span class="wanted-label">WANTED</span>
           <div class="stars" id="stars">
             <span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span>
           </div>
+        </div>
+      </div>
+
+      <!-- Battlefield Conquest Top Bar -->
+      <div id="bf-hud-bar" class="bf-hud-bar hidden">
+        <div class="bf-team bf-blue">
+          <span class="bf-team-tag">BLUEFOR</span>
+          <div class="bf-ticket-track"><div id="bf-blue-bar" class="bf-ticket-fill blue" style="width:100%"></div></div>
+          <strong id="bf-blue-tickets">200</strong>
+        </div>
+        <div id="bf-flags-row" class="bf-flags-row"></div>
+        <div class="bf-team bf-red">
+          <strong id="bf-red-tickets">200</strong>
+          <div class="bf-ticket-track"><div id="bf-red-bar" class="bf-ticket-fill red" style="width:100%"></div></div>
+          <span class="bf-team-tag">OPFOR</span>
         </div>
       </div>
 
@@ -141,20 +157,27 @@
       </header>
 
       <div class="menu-content">
-        <div class="eyebrow"><span class="eyebrow-line"></span>KANSAS CITY, MISSOURI <span>//</span> EXTENDED 81-BLOCK METROPOLIS</div>
-        <h1 class="title">POLY</h1>
+        <div class="eyebrow"><span class="eyebrow-line"></span>PS1 TACTICAL SHOOTER &amp; ROLEPLAY <span>//</span> KANSAS CITY 2026</div>
+        <h1 class="title">HEARTLAND</h1>
         <div class="title-row">
           <div class="year">26</div>
           <div class="title-rule"></div>
-          <div class="title-note">MULTIPLAYER SESSIONS<br>PROXIMITY VOICE · DAY/NIGHT</div>
+          <div class="title-note">PS1 15-BIT BAYER SHADER<br>REALISTIC BALLISTICS · ROLEPLAY</div>
         </div>
-        <p class="tagline">MONEY. POWER. MIDWEST.</p>
-        <p class="blurb">From River Market to Country Club Plaza. Customize your runner, link up in multiplayer sessions with 45m spatial voice chat, and own the streets day or night.</p>
+        <p class="tagline">TACTICAL. GRITTY. MIDWEST.</p>
+        <p class="blurb">Choose Urban Roleplay across an 81-block Kansas City metropolis or deploy into Combined-Arms Battlefield Conquest along the Missouri Riverfront with land, sea &amp; air warfare.</p>
 
-        <div class="menu-mode-select" style="margin-bottom: 14px;">
-          <span style="font-size:10px;letter-spacing:0.22em;color:var(--cream-dim);">GAME MODE:</span>
-          <button id="mode-gtb-btn" class="btn btn-secondary" style="padding:8px 14px;margin-left:8px;border-color:var(--amber);color:var(--amber);">GRAND THEFT BUDGET</button>
-          <button id="mode-bf-btn" class="btn btn-secondary" style="padding:8px 14px;margin-left:6px;">BATTLEFIELD</button>
+        <div class="menu-mode-select" style="margin-bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+          <span style="font-size:10px;letter-spacing:0.22em;color:var(--cream-dim);">MODE:</span>
+          <button id="mode-gtb-btn" class="btn btn-secondary" style="padding:7px 14px;border-color:var(--amber);color:var(--amber);">HEARTLAND RP</button>
+          <button id="mode-bf-btn" class="btn btn-secondary" style="padding:7px 14px;">BATTLEFIELD CONQUEST</button>
+        </div>
+        <div id="menu-rp-role-bar" class="menu-mode-select" style="margin-bottom: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+          <span style="font-size:10px;letter-spacing:0.22em;color:var(--cream-dim);">RP ROLE:</span>
+          <button class="btn btn-secondary rp-role-opt active" data-role="runner" style="padding:5px 10px;font-size:11px;">RUNNER</button>
+          <button class="btn btn-secondary rp-role-opt" data-role="officer" style="padding:5px 10px;font-size:11px;">KCPD OFFICER</button>
+          <button class="btn btn-secondary rp-role-opt" data-role="medic" style="padding:5px 10px;font-size:11px;">MEDIC</button>
+          <button class="btn btn-secondary rp-role-opt" data-role="hitman" style="padding:5px 10px;font-size:11px;">HITMAN</button>
         </div>
         <div class="menu-actions">
           <button id="start-btn" class="btn btn-primary">
@@ -188,6 +211,7 @@
           <div class="control"><span class="key">N</span><span class="control-label">WEATHER</span></div>
           <div class="control"><span class="key">K</span><span class="control-label">TIME +4H</span></div>
           <div class="control"><span class="key">J</span><span class="control-label">LIVE EVENT</span></div>
+          <div class="control"><span class="key">H</span><span class="control-label">RP / EMOTES</span></div>
           <div class="control"><span class="key">G</span><span class="control-label">GRENADE</span></div>
           <div class="control"><span class="key key-wide">1-4</span><span class="control-label">WEAPONS</span></div>
           <div class="control"><span class="key key-wide">XINPUT</span><span class="control-label">GAMEPAD</span></div>
@@ -403,14 +427,65 @@
 
     <div id="pointer-hint" class="pointer-hint hidden">CLICK TO CAPTURE MOUSE</div>
 
-    <!-- Battlefield spawn selection -->
+    <!-- Tactical Battlefield Deployment Screen -->
     <section id="spawn-select" class="screen overlay-screen hidden" style="z-index: 47;">
-      <div class="overlay-panel" style="width: min(420px, 92vw);">
-        <div class="overlay-kicker">BATTLEFIELD // CHOOSE SPAWN</div>
-        <h2>SPAWN POINT</h2>
+      <div class="overlay-panel deploy-panel">
+        <div class="overlay-kicker">OPERATION HEARTLAND // TACTICAL DEPLOYMENT</div>
+        <h2>DEPLOY TO SECTOR</h2>
         <div class="panel-rule"></div>
-        <div id="spawn-list" style="display:grid;gap:8px;margin:12px 0;"></div>
-        <div class="overlay-note">Select a base your team holds to deploy.</div>
+        <div class="deploy-grid">
+          <div class="deploy-map-col">
+            <canvas id="deploy-map" width="320" height="320"></canvas>
+            <div class="deploy-legend">
+              <span class="leg-blue">■ BLUEFOR</span>
+              <span class="leg-neutral">■ NEUTRAL</span>
+              <span class="leg-red">■ OPFOR</span>
+            </div>
+          </div>
+          <div class="deploy-side-col">
+            <div class="deploy-section-label">COMBAT CLASS</div>
+            <div id="bf-class-list" class="bf-class-grid">
+              <button class="btn btn-secondary bf-class-btn active" data-class="assault">ASSAULT<small>Carbine · Grip</small></button>
+              <button class="btn btn-secondary bf-class-btn" data-class="recon">RECON<small>Sniper · Scope+Sil</small></button>
+              <button class="btn btn-secondary bf-class-btn" data-class="breacher">BREACHER<small>Shotgun · 4 Frag</small></button>
+              <button class="btn btn-secondary bf-class-btn" data-class="support">SUPPORT<small>100 Armor · ExtMag</small></button>
+            </div>
+            <div class="deploy-section-label" style="margin-top:10px;">CONTROLLED SECTORS</div>
+            <div id="spawn-list" class="spawn-list-grid"></div>
+          </div>
+        </div>
+        <div class="overlay-note">Click any BLUEFOR sector on the tactical map or list to deploy. Press [M] in-game to redeploy.</div>
+      </div>
+    </section>
+
+    <!-- Roleplay Quick Actions & Emotes Overlay [H] -->
+    <section id="rp-menu" class="screen overlay-screen hidden" style="z-index: 46;">
+      <div class="overlay-panel" style="width: min(460px, 94vw);">
+        <div class="overlay-kicker">HEARTLAND ROLEPLAY // QUICK ACTIONS &amp; EMOTES</div>
+        <h2 id="rp-menu-title">ROLEPLAY MENU</h2>
+        <div class="panel-rule"></div>
+        <div class="deploy-section-label">CHARACTER EMOTES (BROADCAST)</div>
+        <div class="rp-action-grid">
+          <button class="btn btn-secondary rp-act-btn" data-rp="wave">👋 WAVE</button>
+          <button class="btn btn-secondary rp-act-btn" data-rp="salute">🫡 SALUTE</button>
+          <button class="btn btn-secondary rp-act-btn" data-rp="surrender">🙌 HANDS UP</button>
+          <button class="btn btn-secondary rp-act-btn" data-rp="radio">📻 RADIO CHECK</button>
+        </div>
+        <div class="deploy-section-label" style="margin-top:12px;">FIELD SUPPLIES &amp; GEAR</div>
+        <div class="rp-action-grid">
+          <button class="btn btn-secondary rp-act-btn" data-rp="medkit">✚ MEDKIT ($150)</button>
+          <button class="btn btn-secondary rp-act-btn" data-rp="armor">◆ KEVLAR ($200)</button>
+          <button class="btn btn-secondary rp-act-btn" data-rp="ammo">▣ AMMO ($100)</button>
+          <button class="btn btn-secondary rp-act-btn" data-rp="silencer">🔇 SILENCER ($250)</button>
+        </div>
+        <div class="deploy-section-label" style="margin-top:12px;">SWITCH ROLEPLAY IDENTITY</div>
+        <div class="rp-action-grid">
+          <button class="btn btn-secondary rp-act-btn" data-rp="role_runner">STREET RUNNER</button>
+          <button class="btn btn-secondary rp-act-btn" data-rp="role_officer">KCPD OFFICER</button>
+          <button class="btn btn-secondary rp-act-btn" data-rp="role_medic">FIELD MEDIC</button>
+          <button class="btn btn-secondary rp-act-btn" data-rp="role_hitman">HITMAN</button>
+        </div>
+        <button id="close-rp-btn" class="btn btn-primary btn-small" style="margin-top:12px;">CLOSE [H] <span>→</span></button>
       </div>
     </section>
   </div>
