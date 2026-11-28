@@ -3150,23 +3150,33 @@ function headingToFace(from, to) {
   return Math.atan2(-dx, -dz);
 }
 
-function animateWalk(model, phase, amount = 1, speedFactor = 1, crouching = false) {
-  const swing = Math.sin(phase) * 0.58 * amount;
-  const crouchThigh = crouching ? 0.62 : 0;
-  const crouchKnee = crouching ? -1.05 : 0;
+function animateWalk(model, phase, amount = 1, speedFactor = 1, crouching = false, scared = false) {
+  const swing = Math.sin(phase) * 0.62 * amount;
+  const crouchThigh = crouching ? 0.72 : 0;
+  const crouchKnee = crouching ? -1.18 : 0;
   model.leftLeg.rotation.x = swing + crouchThigh;
   model.rightLeg.rotation.x = -swing + crouchThigh;
   if (model.leftKnee && model.rightKnee) {
-    const lBend = Math.max(0, Math.cos(phase - 0.35)) * 0.85 * amount;
-    const rBend = Math.max(0, Math.cos(phase + Math.PI - 0.35)) * 0.85 * amount;
+    const lBend = Math.max(0, Math.cos(phase - 0.35)) * 0.92 * amount;
+    const rBend = Math.max(0, Math.cos(phase + Math.PI - 0.35)) * 0.92 * amount;
     model.leftKnee.rotation.x = -lBend + crouchKnee;
     model.rightKnee.rotation.x = -rBend + crouchKnee;
   }
-  model.leftArm.rotation.x = -swing * 0.78;
-  model.rightArm.rotation.x = swing * 0.78;
-  if (model.leftForearm && model.rightForearm) {
-    model.leftForearm.rotation.x = 0.2 + Math.max(0, -swing) * 0.5;
-    model.rightForearm.rotation.x = 0.2 + Math.max(0, swing) * 0.5;
+  if (scared) {
+    /* Panicked civilian: hunched forward with arms raised shielding head */
+    model.leftArm.rotation.x = 2.15 + Math.sin(phase * 1.4) * 0.25;
+    model.rightArm.rotation.x = 2.15 - Math.sin(phase * 1.4) * 0.25;
+    if (model.leftForearm) model.leftForearm.rotation.x = 1.1;
+    if (model.rightForearm) model.rightForearm.rotation.x = 1.1;
+    if (model.torso) model.torso.rotation.x = 0.24;
+  } else {
+    model.leftArm.rotation.x = -swing * 0.78;
+    model.rightArm.rotation.x = swing * 0.78;
+    if (model.leftForearm && model.rightForearm) {
+      model.leftForearm.rotation.x = 0.22 + Math.max(0, -swing) * 0.52;
+      model.rightForearm.rotation.x = 0.22 + Math.max(0, swing) * 0.52;
+    }
+    if (model.torso) model.torso.rotation.x = amount * 0.08 * speedFactor;
   }
   /* Prop-specific natural arm poses */
   if (model.heldProp === 'coffee' || model.heldProp === 'phone') {
@@ -3183,12 +3193,159 @@ function animateWalk(model, phase, amount = 1, speedFactor = 1, crouching = fals
     if (model.rightForearm) model.rightForearm.rotation.x = 0.55;
   }
   if (model.torso) {
-    model.torso.rotation.y = -Math.sin(phase) * 0.1 * amount;
+    model.torso.rotation.y = -Math.sin(phase) * 0.11 * amount;
   }
   if (model.head) {
-    model.head.rotation.y = Math.sin(phase * 0.45) * 0.12;
+    model.head.rotation.y = Math.sin(phase * 0.45) * 0.14;
   }
-  model.group.position.y = 0.14 - (crouching ? 0.22 : 0) + Math.abs(Math.sin(phase)) * 0.032 * speedFactor;
+  model.group.position.y = 0.14 - (crouching ? 0.26 : 0) + Math.abs(Math.sin(phase)) * 0.034 * speedFactor;
+}
+
+/* ============================================================
+   Tactical Combat NPC Animation System (Aim, Cover, Recoil, Flinch, Reload)
+   ============================================================ */
+function animateTacticalNPC(actor, dt, moving, speedRatio = 1) {
+  const m = actor.model;
+  if (!m) return;
+  const wantCrouch = !!(actor.crouching || actor.aiState === 'in_cover' || actor.aiState === 'reloading');
+  const wantAim = (actor.aiState === 'aiming' || actor.aiState === 'firing') ? 1 : 0;
+  const reloading = actor.aiState === 'reloading';
+
+  actor.crouchBlend = lerp(actor.crouchBlend || 0, wantCrouch ? 1 : 0, 1 - Math.exp(-dt * 9));
+  actor.aimBlend = lerp(actor.aimBlend || 0, wantAim, 1 - Math.exp(-dt * 8.5));
+  actor.recoilKick = Math.max(0, (actor.recoilKick || 0) - dt * 6.5);
+  actor.flinchTimer = Math.max(0, (actor.flinchTimer || 0) - dt * 3.2);
+
+  const cb = actor.crouchBlend;
+  const ab = actor.aimBlend;
+  const rk = actor.recoilKick;
+  const fl = actor.flinchTimer;
+  const breathe = Math.sin(gameTime * 2.6 + (actor.phase || 0)) * 0.025;
+  const limpMult = actor.crippled ? 0.65 : 1.0;
+
+  /* Legs: smooth stride + deep tactical crouch knee bend */
+  const moveAmt = moving ? clamp(speedRatio, 0.2, 1.15) : 0;
+  const swing = Math.sin(actor.phase) * 0.66 * moveAmt * limpMult;
+  m.leftLeg.rotation.x = swing + cb * 0.85;
+  m.rightLeg.rotation.x = -swing + cb * 0.78;
+  if (m.leftKnee && m.rightKnee) {
+    const lBend = Math.max(0, Math.cos(actor.phase - 0.35)) * 0.95 * moveAmt;
+    const rBend = Math.max(0, Math.cos(actor.phase + Math.PI - 0.35)) * 0.95 * moveAmt;
+    m.leftKnee.rotation.x = -lBend - cb * 1.32;
+    m.rightKnee.rotation.x = -rBend - cb * 1.25;
+  }
+
+  /* Two-Handed Weapon Carry -> Deliberate Shouldered Aim -> Recoil Kick -> Reload */
+  const lowReadyR = 0.62 + (moving ? 0.14 : 0) + breathe;
+  const lowReadyL = 0.56 + (moving ? 0.12 : 0);
+  const aimR = 1.48 + rk * 0.24 - fl * 0.45;
+  const aimL = 1.34 + rk * 0.16 - fl * 0.35;
+
+  if (reloading) {
+    const relCycle = Math.sin((actor.reloadTimer || 0) * 5.2);
+    m.rightArm.rotation.x = 0.95;
+    m.rightArm.rotation.y = 0.18;
+    if (m.rightForearm) m.rightForearm.rotation.x = 0.55;
+    m.leftArm.rotation.x = 0.65 + relCycle * 0.42;
+    m.leftArm.rotation.y = -0.35;
+    if (m.leftForearm) m.leftForearm.rotation.x = 0.85 - relCycle * 0.35;
+  } else {
+    m.rightArm.rotation.x = lerp(lowReadyR, aimR, ab);
+    m.rightArm.rotation.y = lerp(0.10, 0.22, ab);
+    if (m.rightForearm) m.rightForearm.rotation.x = lerp(0.42, 0.22 + rk * 0.18, ab);
+
+    m.leftArm.rotation.x = lerp(lowReadyL, aimL, ab);
+    m.leftArm.rotation.y = lerp(-0.28, -0.52, ab);
+    if (m.leftForearm) m.leftForearm.rotation.x = lerp(0.58, 0.62, ab);
+  }
+
+  /* Torso blading into shooter stance + sprint forward lean + hit flinch */
+  if (m.torso) {
+    const sprintLean = moving ? 0.16 * moveAmt : 0;
+    m.torso.rotation.x = sprintLean + cb * 0.22 - fl * 0.34 - rk * 0.08 + breathe * 0.5;
+    m.torso.rotation.y = lerp(-Math.sin(actor.phase) * 0.08 * moveAmt, 0.26, ab) + fl * 0.22;
+  }
+  /* Head vigilant scan when patrolling, locked onto sights when aiming */
+  if (m.head) {
+    const scanY = Math.sin(gameTime * 1.1 + (actor.phase || 0)) * 0.26;
+    m.head.rotation.y = lerp(scanY, -0.18, ab);
+    m.head.rotation.x = lerp(0, 0.08, ab) - fl * 0.32 - rk * 0.08;
+  }
+  const limpBob = actor.crippled && moving ? Math.sin(actor.phase * 0.5) * 0.05 : 0;
+  m.group.position.y = 0.14 - cb * 0.34 + Math.abs(Math.sin(actor.phase)) * 0.032 * moveAmt + limpBob;
+}
+
+/* Find nearest tactical cover spot tucked behind a collider or parked vehicle away from threat */
+function findCoverPosition(actor, threatX, threatZ) {
+  if (!city) return null;
+  const pos = actor.group.position;
+  const nearby = city.getNearbyColliders(pos.x, pos.z, 24);
+  let best = null, bestScore = 1e9;
+
+  for (let i = 0; i < nearby.length; i++) {
+    const c = nearby[i];
+    if (!c.active || c.tag === 'zone') continue;
+    const dx = c.x - threatX, dz = c.z - threatZ;
+    const dLen = Math.hypot(dx, dz);
+    if (dLen < 3.5) continue;
+    const nx = dx / dLen, nz = dz / dLen;
+    const cx = c.x + nx * (c.w * 0.5 + 1.05);
+    const cz = c.z + nz * (c.d * 0.5 + 1.05);
+    if (Math.abs(cx) > KC.WORLD_LIMIT - 10 || Math.abs(cz) > KC.WORLD_LIMIT - 10) continue;
+    if (G.gameMode === 'bf' && cx < -134) continue;
+    if (collidesCircle(cx, cz, 0.5, false)) continue;
+    const distFromActor = dist2(pos.x, pos.z, cx, cz);
+    if (distFromActor > 26) continue;
+    /* Prefer spots that genuinely break line-of-sight from the threat */
+    const blocked = !hasLineOfSight(new THREE.Vector3(cx, 1.05, cz), new THREE.Vector3(threatX, 1.45, threatZ));
+    const score = distFromActor + (blocked ? 0 : 18);
+    if (score < bestScore) {
+      bestScore = score;
+      best = { x: cx, z: cz, blocked };
+    }
+  }
+  /* Also consider nearby parked vehicles as tactical hard cover */
+  for (let i = 0; i < cars.length; i++) {
+    const car = cars[i];
+    if (car.controlled || Math.abs(car.speed) > 1.5) continue;
+    const dActor = dist2(pos.x, pos.z, car.x, car.z);
+    if (dActor > 22) continue;
+    const dx = car.x - threatX, dz = car.z - threatZ;
+    const dLen = Math.max(1, Math.hypot(dx, dz));
+    const cx = car.x + (dx / dLen) * 2.5;
+    const cz = car.z + (dz / dLen) * 2.5;
+    if (collidesCircle(cx, cz, 0.5, false)) continue;
+    if (dActor + 4 < bestScore) {
+      bestScore = dActor + 4;
+      best = { x: cx, z: cz, blocked: true };
+    }
+  }
+  return best;
+}
+
+/* Suppress nearby NPCs when bullets impact/pass close so they duck & seek cover */
+function suppressNearbyHostiles(ix, iz, threatX, threatZ, radius = 9.5) {
+  for (const list of [thugs, cops, allies]) {
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      if (!a.alive) continue;
+      const d = dist2(a.group.position.x, a.group.position.z, ix, iz);
+      if (d < radius) {
+        a.suppressedTimer = Math.max(a.suppressedTimer || 0, 2.2);
+        a.flinchTimer = Math.max(a.flinchTimer || 0, 0.35);
+        if (a.aiState !== 'seeking_cover' && a.aiState !== 'in_cover' && a.aiState !== 'reloading') {
+          const cov = findCoverPosition(a, threatX, threatZ);
+          if (cov) {
+            a.coverPos = cov;
+            a.aiState = 'seeking_cover';
+            a.stateTimer = 3.5;
+          } else {
+            a.crouching = true;
+          }
+        }
+      }
+    }
+  }
 }
 
 /* ---------------- Pedestrians with Intersection Turns, Social Groups & Proximity Recycling ---------------- */
@@ -3350,7 +3507,7 @@ function updatePeds(dt) {
       p.heading = Math.atan2(-fx, -fz);
       p.group.rotation.y = lerp(p.group.rotation.y, p.heading, Math.min(1, dt * 10));
       p.phase += dt * 11;
-      animateWalk(p.model, p.phase, 1.3, spd / 1.2);
+      animateWalk(p.model, p.phase, 1.3, spd / 1.2, false, true);
       p.model.leftArm.rotation.x = 2.5 + Math.sin(p.phase * 2) * 0.3;
       p.model.rightArm.rotation.x = 2.5 + Math.cos(p.phase * 2) * 0.3;
       continue;
@@ -3573,17 +3730,31 @@ function makeHostile(type, x, z, extra = {}) {
   scene.add(model.group);
   const actor = {
     type, kind: type, alive: true, model, group: model.group,
-    hp: type === 'cop' ? 100 : (extra.military ? 100 : (80 + (state.contract.number || 1) * 12)),
-    maxHp: type === 'cop' ? 100 : (extra.military ? 100 : (80 + (state.contract.number || 1) * 12)),
-    speed: type === 'cop' ? 3.05 : (extra.military ? 3.45 : 3.25),
-    fireTimer: rand(0.8, 2.2),
-    shootCooldown: type === 'cop' ? rand(1.25, 2.0) : rand(0.95, 1.65),
-    damage: type === 'cop' ? 8 : (extra.military ? 9 : (6 + (state.contract.number || 1) * 0.6)),
-    accuracy: type === 'cop' ? 0.55 : (extra.military ? 0.58 : 0.5),
+    hp: 100,
+    maxHp: 100,
+    speed: type === 'cop' ? 3.25 : (extra.military ? 3.55 : 3.35),
+    fireTimer: rand(0.5, 1.1),
+    shootCooldown: type === 'cop' ? rand(0.32, 0.45) : (extra.military ? rand(0.22, 0.34) : rand(0.35, 0.5)),
+    damage: type === 'cop' ? 18 : (extra.military ? 22 : 16),
+    accuracy: type === 'cop' ? 0.56 : (extra.military ? 0.60 : 0.48),
     phase: rand(0, 10),
     losTimer: 0,
     hasLos: false,
     crouching: false,
+    aiState: 'patrol',
+    aimTimer: 0,
+    stateTimer: 0,
+    coverPos: null,
+    magAmmo: extra.military ? 15 : 10,
+    burstLeft: 0,
+    reloadTimer: 0,
+    crouchBlend: 0,
+    aimBlend: 0,
+    recoilKick: 0,
+    flinchTimer: 0,
+    suppressedTimer: 0,
+    bleeding: 0,
+    crippled: false,
     strafe: Math.random() < 0.5 ? 1 : -1,
     strafeTimer: rand(1.5, 3.5),
     ...extra
@@ -3614,10 +3785,14 @@ function makeAlly(x, z) {
   const ally = {
     type: 'ally', kind: 'ally', alive: true, military: true, team: 'player',
     model, group: model.group,
-    hp: 110, maxHp: 110, speed: 3.55,
-    fireTimer: rand(0.6, 1.5), shootCooldown: rand(0.85, 1.45),
-    damage: 14, phase: rand(0, 10),
+    hp: 110, maxHp: 110, speed: 3.65,
+    fireTimer: rand(0.4, 0.9), shootCooldown: rand(0.22, 0.34),
+    damage: 24, phase: rand(0, 10),
     targetZone: null, heading: 0,
+    aiState: 'patrol', aimTimer: 0, stateTimer: 0,
+    coverPos: null, magAmmo: 12, burstLeft: 0, reloadTimer: 0,
+    crouchBlend: 0, aimBlend: 0, recoilKick: 0, flinchTimer: 0,
+    suppressedTimer: 0, bleeding: 0, crippled: false,
     strafe: Math.random() < 0.5 ? 1 : -1, strafeTimer: rand(1.5, 3.2)
   };
   allies.push(ally);
@@ -3652,6 +3827,14 @@ function updateAllies(dt) {
       continue;
     }
     const pos = a.group.position;
+    if (a.bleeding > 0) {
+      a.hp -= a.bleeding * dt;
+      if (Math.random() < dt * 2.5) spawnParticles(pos.x, 0.9, pos.z, 0x991018, 2, 1.2, 0.35, 10);
+      if (a.hp <= 0) { a.alive = false; continue; }
+    }
+    a.suppressedTimer = Math.max(0, (a.suppressedTimer || 0) - dt);
+    const effSpeed = a.speed * (a.crippled ? 0.55 : 1.0);
+
     /* Find nearest living enemy soldier */
     let targetEnemy = null, bestD = 72;
     for (const t of thugs) {
@@ -3659,43 +3842,119 @@ function updateAllies(dt) {
       const d = dist2(pos.x, pos.z, t.group.position.x, t.group.position.z);
       if (d < bestD) { bestD = d; targetEnemy = t; }
     }
+
     let moving = false;
-    if (targetEnemy) {
-      const tp = targetEnemy.group.position;
-      a.heading = headingToFace(pos, tp);
-      a.group.rotation.y = a.heading;
-      if (bestD > 26) {
-        const dx = (tp.x - pos.x) / bestD, dz = (tp.z - pos.z) / bestD;
-        const dir = steerDirectionWhiskers(pos.x, pos.z, dx, dz, 1.65);
-        pos.x += dir.x * a.speed * dt;
-        pos.z += dir.z * a.speed * dt;
-        moving = true;
+    let speedRatio = 1.0;
+
+    if (a.aiState === 'reloading') {
+      a.crouching = true;
+      a.reloadTimer -= dt;
+      if (a.reloadTimer <= 0) {
+        a.magAmmo = 12;
+        a.aiState = targetEnemy ? 'aiming' : 'patrol';
+        a.aimTimer = rand(0.45, 0.7);
+      }
+    } else if (a.aiState === 'seeking_cover' && a.coverPos) {
+      const cd = dist2(pos.x, pos.z, a.coverPos.x, a.coverPos.z);
+      if (cd < 1.3 || (a.stateTimer -= dt) <= 0) {
+        a.aiState = 'in_cover';
+        a.stateTimer = rand(1.1, 2.0);
+        a.crouching = true;
       } else {
-        a.strafeTimer -= dt;
-        if (a.strafeTimer <= 0) { a.strafe *= -1; a.strafeTimer = rand(1.6, 3.0); }
-        const sx = -(tp.z - pos.z) / Math.max(1, bestD) * a.strafe;
-        const sz = (tp.x - pos.x) / Math.max(1, bestD) * a.strafe;
-        if (!collidesCircle(pos.x + sx * 1.0, pos.z + sz * 1.0, 0.45)) {
-          pos.x += sx * a.speed * 0.45 * dt;
-          pos.z += sz * a.speed * 0.45 * dt;
-          moving = true;
+        const dx = (a.coverPos.x - pos.x) / cd, dz = (a.coverPos.z - pos.z) / cd;
+        const dir = steerDirectionWhiskers(pos.x, pos.z, dx, dz, 1.5);
+        a.heading = Math.atan2(-dir.x, -dir.z);
+        a.group.rotation.y = a.heading;
+        pos.x += dir.x * effSpeed * 1.18 * dt;
+        pos.z += dir.z * effSpeed * 1.18 * dt;
+        a.crouching = false;
+        moving = true;
+        speedRatio = 1.15;
+      }
+    } else if (a.aiState === 'in_cover') {
+      a.crouching = true;
+      if (targetEnemy) {
+        a.heading = headingToFace(pos, targetEnemy.group.position);
+        a.group.rotation.y = a.heading;
+      }
+      a.stateTimer -= dt;
+      if (a.stateTimer <= 0 && a.suppressedTimer <= 0.2) {
+        a.crouching = false;
+        if (targetEnemy) {
+          a.aiState = 'aiming';
+          a.aimTimer = rand(0.45, 0.7);
+        } else {
+          a.aiState = 'patrol';
         }
       }
-      a.fireTimer -= dt;
-      if (a.fireTimer <= 0 && bestD < 58 && hasLineOfSight(new THREE.Vector3(pos.x, 1.5, pos.z), new THREE.Vector3(tp.x, 1.35, tp.z))) {
-        a.fireTimer = a.shootCooldown;
-        const from = new THREE.Vector3(pos.x, 1.45, pos.z);
-        const to = new THREE.Vector3(tp.x + rand(-0.4, 0.4), 1.35 + rand(-0.3, 0.3), tp.z + rand(-0.4, 0.4));
-        addTracer(from, to, 0x7fd4ff, 0.72);
-        addImpactFlash(from, 0xffe49c, 0.35);
-        if (Math.random() < 0.48) {
-          targetEnemy.hp -= a.damage;
-          spawnParticles(to.x, to.y, to.z, 0x9e1818, 4, 2.5, 0.3, 10);
-          if (targetEnemy.hp <= 0) killActor(targetEnemy, 'ally');
+    } else if (targetEnemy) {
+      const tp = targetEnemy.group.position;
+      const los = bestD < 58 && hasLineOfSight(new THREE.Vector3(pos.x, 1.5, pos.z), new THREE.Vector3(tp.x, 1.35, tp.z));
+      a.heading = headingToFace(pos, tp);
+      a.group.rotation.y = a.heading;
+
+      if (!los || bestD > 38) {
+        a.aiState = 'patrol';
+        a.crouching = false;
+        const dx = (tp.x - pos.x) / bestD, dz = (tp.z - pos.z) / bestD;
+        const dir = steerDirectionWhiskers(pos.x, pos.z, dx, dz, 1.65);
+        pos.x += dir.x * effSpeed * dt;
+        pos.z += dir.z * effSpeed * dt;
+        moving = true;
+      } else {
+        /* Deliberate Take-Aim BEFORE Firing! */
+        if (a.aiState !== 'aiming' && a.aiState !== 'firing') {
+          a.aiState = 'aiming';
+          a.aimTimer = rand(0.48, 0.72);
+          a.crouching = bestD < 24 && Math.random() < 0.45;
+        }
+        if (a.aiState === 'aiming') {
+          a.aimTimer -= dt;
+          if (a.aimTimer <= 0) {
+            a.aiState = 'firing';
+            a.burstLeft = 2 + Math.floor(Math.random() * 2);
+            a.fireTimer = 0.05;
+          }
+        } else if (a.aiState === 'firing') {
+          a.fireTimer -= dt;
+          if (a.fireTimer <= 0) {
+            a.fireTimer = a.shootCooldown;
+            a.burstLeft--;
+            a.magAmmo--;
+            a.recoilKick = 1.0;
+            const from = new THREE.Vector3(pos.x, a.crouching ? 1.12 : 1.48, pos.z);
+            const to = new THREE.Vector3(tp.x + rand(-0.35, 0.35), 1.35 + rand(-0.25, 0.25), tp.z + rand(-0.35, 0.35));
+            addTracer(from, to, 0x7fd4ff, 0.75);
+            addImpactFlash(from, 0xffe49c, 0.38);
+            if (Math.random() < 0.56) {
+              targetEnemy.hp -= a.damage;
+              targetEnemy.flinchTimer = 0.35;
+              spawnParticles(to.x, to.y, to.z, 0x9e1818, 5, 2.8, 0.32, 10);
+              if (targetEnemy.hp <= 0) killActor(targetEnemy, 'ally');
+            }
+            if (a.magAmmo <= 0) {
+              a.aiState = 'reloading';
+              a.reloadTimer = 1.75;
+              const cov = findCoverPosition(a, tp.x, tp.z);
+              if (cov) { a.coverPos = cov; }
+            } else if (a.burstLeft <= 0) {
+              /* Duck into cover or re-aim between bursts */
+              const cov = Math.random() < 0.55 ? findCoverPosition(a, tp.x, tp.z) : null;
+              if (cov) {
+                a.coverPos = cov;
+                a.aiState = 'seeking_cover';
+                a.stateTimer = 3.0;
+              } else {
+                a.aiState = 'aiming';
+                a.aimTimer = rand(0.55, 0.95);
+              }
+            }
+          }
         }
       }
     } else if (bfZones.length) {
-      /* Advance to capture neutral or enemy conquest zones */
+      a.aiState = 'patrol';
+      a.crouching = false;
       if (!a.targetZone || a.targetZone.owner === 'player') {
         const candidates = bfZones.filter((z) => z.owner !== 'player');
         a.targetZone = candidates.length ? KC.pick(candidates) : KC.pick(bfZones);
@@ -3706,19 +3965,16 @@ function updateAllies(dt) {
         const dir = steerDirectionWhiskers(pos.x, pos.z, dx, dz, 1.65);
         a.heading = Math.atan2(-dir.x, -dir.z);
         a.group.rotation.y = a.heading;
-        pos.x += dir.x * a.speed * dt;
-        pos.z += dir.z * a.speed * dt;
+        pos.x += dir.x * effSpeed * dt;
+        pos.z += dir.z * effSpeed * dt;
         moving = true;
       }
     }
+
     const res = resolveCircleWorld(pos.x, pos.z, 0.38, true);
     pos.x = res.x; pos.z = res.z;
-    a.phase += dt * (moving ? 8.2 : 1.5);
-    animateWalk(a.model, a.phase, moving ? 0.9 : 0.08, 1.0, false);
-    if (targetEnemy && a.model.rightArm) {
-      a.model.rightArm.rotation.x = 1.38;
-      if (a.model.leftArm) a.model.leftArm.rotation.x = 1.05;
-    }
+    a.phase += dt * (moving ? 8.6 * speedRatio : 1.4);
+    animateTacticalNPC(a, dt, moving, speedRatio);
   }
 }
 
@@ -3864,40 +4120,134 @@ function updateHostile(actor, dt, peersList) {
   const tx = target.x, tz = target.z;
   const dx = tx - pos.x, dz = tz - pos.z;
   const dist = Math.hypot(dx, dz);
+  const engageRange = actor.military ? 52 : actor.type === 'cop' ? 38 : 34;
+
+  /* Realistic bleeding trauma tick */
+  if (actor.bleeding > 0) {
+    actor.hp -= actor.bleeding * dt;
+    if (Math.random() < dt * 2.8) spawnParticles(pos.x, 0.9, pos.z, 0x991018, 2, 1.2, 0.35, 10);
+    if (actor.hp <= 0) { killActor(actor, 'bleed'); return; }
+  }
+  actor.suppressedTimer = Math.max(0, (actor.suppressedTimer || 0) - dt);
+  const effSpeed = actor.speed * (actor.crippled ? 0.55 : 1.0);
 
   actor.losTimer -= dt;
   if (actor.losTimer <= 0) {
-    actor.losTimer = 0.25 + Math.random() * 0.18;
+    actor.losTimer = 0.22 + Math.random() * 0.16;
     actor.hasLos = hasLineOfSight(
-      new THREE.Vector3(pos.x, 1.45, pos.z),
-      new THREE.Vector3(tx, activeVehicle ? 1.0 : player.currentEye * 0.75, tz)
+      new THREE.Vector3(pos.x, actor.crouching ? 1.15 : 1.48, pos.z),
+      new THREE.Vector3(tx, activeVehicle ? 1.0 : player.currentEye * 0.78, tz)
     );
   }
 
-  actor.strafeTimer -= dt;
-  if (actor.strafeTimer <= 0) {
-    actor.strafeTimer = rand(1.8, 3.6);
-    if (Math.random() < 0.5) actor.strafe *= -1;
-    actor.crouching = actor.hasLos && dist < 20 && Math.random() < 0.35;
-  }
-
-  const desired = actor.type === 'cop' ? 15 : 11;
-  const dirX = dx / Math.max(0.001, dist), dirZ = dz / Math.max(0.001, dist);
   let moveX = 0, moveZ = 0;
+  let speedRatio = 1.0;
 
-  if (!actor.hasLos || dist > desired + 3) {
-    const steered = steerDirectionWhiskers(pos.x, pos.z, dirX, dirZ, 1.7);
-    moveX = steered.x * actor.speed;
-    moveZ = steered.z * actor.speed;
-    actor.crouching = false;
-  } else if (dist < desired - 4) {
-    moveX = -dirX * actor.speed * 0.6;
-    moveZ = -dirZ * actor.speed * 0.6;
+  if (actor.aiState === 'reloading') {
+    actor.crouching = true;
+    actor.reloadTimer -= dt;
+    if (actor.reloadTimer <= 0) {
+      actor.magAmmo = actor.military ? 15 : 10;
+      actor.aiState = engagingHostile ? 'aiming' : 'patrol';
+      actor.aimTimer = rand(0.5, 0.8);
+    }
+  } else if (actor.aiState === 'seeking_cover' && actor.coverPos) {
+    const cd = dist2(pos.x, pos.z, actor.coverPos.x, actor.coverPos.z);
+    if (cd < 1.35 || (actor.stateTimer -= dt) <= 0) {
+      actor.aiState = 'in_cover';
+      actor.stateTimer = rand(1.1, 2.2);
+      actor.crouching = true;
+    } else {
+      const cdx = (actor.coverPos.x - pos.x) / cd, cdz = (actor.coverPos.z - pos.z) / cd;
+      const steered = steerDirectionWhiskers(pos.x, pos.z, cdx, cdz, 1.55);
+      moveX = steered.x * effSpeed * 1.18;
+      moveZ = steered.z * effSpeed * 1.18;
+      actor.crouching = false;
+      speedRatio = 1.18;
+    }
+  } else if (actor.aiState === 'in_cover') {
+    actor.crouching = true;
+    actor.stateTimer -= dt;
+    if (actor.stateTimer <= 0 && actor.suppressedTimer <= 0.25) {
+      actor.crouching = false;
+      if (engagingHostile && dist < engageRange) {
+        /* Step slightly sideways to peek out of cover & take deliberate aim */
+        actor.aiState = 'aiming';
+        actor.aimTimer = rand(0.52, 0.82);
+      } else {
+        actor.aiState = 'patrol';
+      }
+    }
+  } else if (engagingHostile && !actor.gangster && actor.hasLos && dist < engageRange) {
+    /* Deliberate Take-Aim Sequence BEFORE Firing! */
+    if (actor.aiState !== 'aiming' && actor.aiState !== 'firing') {
+      /* Sometimes sprint to nearby hard cover first before engaging */
+      if (dist > 14 && Math.random() < 0.32) {
+        const cov = findCoverPosition(actor, tx, tz);
+        if (cov) {
+          actor.coverPos = cov;
+          actor.aiState = 'seeking_cover';
+          actor.stateTimer = 3.2;
+        }
+      }
+      if (actor.aiState !== 'seeking_cover') {
+        actor.aiState = 'aiming';
+        actor.aimTimer = rand(0.50, 0.80);
+        actor.crouching = dist < 24 && Math.random() < 0.48;
+      }
+    }
+    if (actor.aiState === 'aiming') {
+      /* Steady aiming stance — slight tactical side-step only if too close */
+      if (dist < 7) {
+        const dirX = dx / Math.max(0.001, dist), dirZ = dz / Math.max(0.001, dist);
+        moveX = -dirX * effSpeed * 0.45;
+        moveZ = -dirZ * effSpeed * 0.45;
+      }
+      actor.aimTimer -= dt;
+      if (actor.aimTimer <= 0) {
+        actor.aiState = 'firing';
+        actor.burstLeft = actor.military ? (2 + Math.floor(Math.random() * 2)) : 2;
+        actor.fireTimer = 0.04;
+      }
+    } else if (actor.aiState === 'firing') {
+      actor.fireTimer -= dt;
+      if (actor.fireTimer <= 0) {
+        actor.fireTimer = actor.shootCooldown;
+        actor.burstLeft--;
+        actor.magAmmo = (actor.magAmmo ?? 12) - 1;
+        actor.recoilKick = 1.0;
+        hostileShoot(actor, dist);
+        if (actor.magAmmo <= 0) {
+          actor.aiState = 'reloading';
+          actor.reloadTimer = 1.85;
+          const cov = findCoverPosition(actor, tx, tz);
+          if (cov) actor.coverPos = cov;
+        } else if (actor.burstLeft <= 0) {
+          /* Seek cover or pause to re-aim between bursts */
+          const cov = Math.random() < 0.58 ? findCoverPosition(actor, tx, tz) : null;
+          if (cov) {
+            actor.coverPos = cov;
+            actor.aiState = 'seeking_cover';
+            actor.stateTimer = 3.2;
+          } else {
+            actor.aiState = 'aiming';
+            actor.aimTimer = rand(0.60, 1.05);
+          }
+        }
+      }
+    }
   } else {
-    const sx = -dirZ * actor.strafe, sz = dirX * actor.strafe;
-    if (!collidesCircle(pos.x + sx * 1.1, pos.z + sz * 1.1, 0.42)) {
-      moveX = sx * actor.speed * 0.42;
-      moveZ = sz * actor.speed * 0.42;
+    actor.aiState = 'patrol';
+    actor.crouching = false;
+    const desired = actor.type === 'cop' ? 16 : 12;
+    const dirX = dx / Math.max(0.001, dist), dirZ = dz / Math.max(0.001, dist);
+    if (!actor.hasLos || dist > desired + 3) {
+      const steered = steerDirectionWhiskers(pos.x, pos.z, dirX, dirZ, 1.7);
+      moveX = steered.x * effSpeed;
+      moveZ = steered.z * effSpeed;
+    } else if (dist < desired - 4) {
+      moveX = -dirX * effSpeed * 0.6;
+      moveZ = -dirZ * effSpeed * 0.6;
     }
   }
 
@@ -3915,32 +4265,27 @@ function updateHostile(actor, dt, peersList) {
     }
   }
 
-  if (moveX || moveZ) {
+  const isMoving = Math.hypot(moveX, moveZ) > 0.25;
+  if (isMoving) {
     moveWithCollision(actor, moveX * dt, moveZ * dt, 0.4);
-    actor.phase += dt * 7.5;
-    animateWalk(actor.model, actor.phase, 0.8, 1, actor.crouching);
+    actor.phase += dt * 8.2 * speedRatio;
   } else {
-    animateWalk(actor.model, actor.phase, 0.08, 0.15, actor.crouching);
+    actor.phase += dt * 1.2;
   }
-  actor.heading = headingToFace(pos, { x: tx, z: tz });
+  if (actor.aiState === 'seeking_cover' && isMoving) {
+    actor.heading = Math.atan2(-moveX, -moveZ);
+  } else {
+    actor.heading = headingToFace(pos, { x: tx, z: tz });
+  }
   actor.group.rotation.y = actor.heading;
+  animateTacticalNPC(actor, dt, isMoving, speedRatio);
 
-  /* Raise weapon arm forward when aiming at player */
-  if (actor.hasLos && dist < 34) {
-    actor.model.rightArm.rotation.x = 1.45;
-  }
-
-  actor.fireTimer -= dt;
   if (actor.gangster) {
     actor.randomShootTimer = (actor.randomShootTimer || 0) - dt;
     if (actor.randomShootTimer <= 0) {
       actor.randomShootTimer = rand(4, 10);
       randomGangShoot(actor);
     }
-  }
-  if (engagingHostile && !actor.gangster && actor.fireTimer <= 0 && actor.hasLos && dist < (actor.military ? 48 : actor.type === 'cop' ? 34 : 30)) {
-    actor.fireTimer = actor.shootCooldown * rand(0.8, 1.25);
-    hostileShoot(actor, dist);
   }
 }
 
@@ -4103,13 +4448,14 @@ function tryShoot() {
           falloff = clamp(1 - (dist / w.range) * (1 - (w.falloff || 0.6)), w.falloff || 0.6, 1);
         }
         let partMult = 1.0;
-        if (part === 'head') partMult = (w.headMult || 2.8);
-        else if (part === 'torso') partMult = (w.torsoMult || 0.92);
+        if (part === 'head') partMult = (w.headMult || 3.2);
+        else if (part === 'torso') partMult = (w.torsoMult || 0.96);
         else if (part === 'limb') partMult = (w.limbMult || 0.48);
-        /* Ensure single-bullet headshots are always lethal */
-        if (part === 'head' && pellets === 1) partMult = Math.max(partMult, 120 / Math.max(1, w.damage));
+        /* Ultra-realistic lethality: any headshot is fatal; point-blank rifle/shotgun chest hits are fatal */
+        if (part === 'head') partMult = Math.max(partMult, (130 * pellets) / Math.max(1, w.damage));
+        else if (part === 'torso' && pellets === 1 && dist < 7.5 && state.weapon >= 1) partMult = Math.max(partMult, 1.85);
         const dmg = (w.damage / pellets) * partMult * falloff;
-        damageActor(actor, dmg, h.point, head);
+        damageActor(actor, dmg, h.point, head, part);
       } else if (h.object.userData.car) {
         const hitCar = h.object.userData.car;
         spawnParticles(h.point.x, h.point.y, h.point.z, 0xffe08a, 7, 4.2, 0.28, 10);
@@ -4159,6 +4505,9 @@ function tryShoot() {
   postUniforms.uChroma.value = Math.min(0.45, postUniforms.uChroma.value + (state.weapon >= 2 ? 0.18 : 0.05));
 
   if (KC.multiplayer) KC.multiplayer.broadcastShot(muzzle, lastEnd, 0xffd08a);
+
+  /* Tactical suppression: bullets landing near NPCs make them flinch, duck & seek cover */
+  suppressNearbyHostiles(lastEnd.x, lastEnd.z, player.pos.x, player.pos.z, 9.5);
 
   if (!hasSilencer) {
     scarePeds(player.pos.x, player.pos.z, 24);
@@ -4254,17 +4603,42 @@ function updateGrenades(dt) {
   }
 }
 
-function damageActor(actor, amount, point, headshot = false) {
+function damageActor(actor, amount, point, headshot = false, part = 'torso') {
   if (!actor.alive) return;
   actor.hp -= amount;
-  spawnParticles(point.x, point.y, point.z, 0xa80f22, headshot ? 10 : 6, 3.5, 0.45, 11);
-  addImpactFlash(point, 0xb3122b, 0.35);
+  actor.flinchTimer = 0.45;
+  /* Disrupt NPC aim on hit */
+  if (actor.aiState === 'aiming' || actor.aiState === 'firing') {
+    actor.aimTimer = Math.max(actor.aimTimer || 0, 0.42);
+  }
+  /* Realistic trauma: bleeding, crippling limb wounds & immediate cover-seeking */
+  if (part === 'limb') {
+    actor.crippled = true;
+    actor.bleeding = Math.max(actor.bleeding || 0, 6.5);
+  } else if (part === 'torso') {
+    actor.bleeding = Math.max(actor.bleeding || 0, 9.5);
+  }
+  spawnParticles(point.x, point.y, point.z, 0xa80f22, headshot ? 16 : 8, headshot ? 4.8 : 3.6, 0.52, 11);
+  addImpactFlash(point, 0xb3122b, headshot ? 0.55 : 0.35);
   showHitmarker(false);
   G.sound.hitmark(false);
-  actor.scared = 8;
+  actor.scared = 10;
   actor.fleeX = player.pos.x;
   actor.fleeZ = player.pos.z;
-  if (actor.hp <= 0) killActor(actor, 'shot');
+  if (actor.hp <= 0) {
+    if (headshot) notify('BALLISTICS', 'HEADSHOT — INSTANT KILL', 'money');
+    killActor(actor, headshot ? 'headshot' : 'shot');
+  } else if (actor.type === 'thug' || actor.type === 'cop') {
+    /* Wounded combatant immediately breaks off & sprints for nearest hard cover */
+    const cov = findCoverPosition(actor, player.pos.x, player.pos.z);
+    if (cov) {
+      actor.coverPos = cov;
+      actor.aiState = 'seeking_cover';
+      actor.stateTimer = 3.5;
+    } else {
+      actor.crouching = true;
+    }
+  }
 }
 
 function killActor(actor, cause = 'shot') {
@@ -4704,19 +5078,27 @@ function applyPlayerDamage(amount) {
   if (G.mode !== 'playing') return;
   state.damageTimer = 0;
   state.damageFlash = 1;
-  player.shake = Math.max(player.shake, 0.75);
-  postUniforms.uChroma.value = Math.min(1.0, postUniforms.uChroma.value + 0.55);
+  player.shake = Math.max(player.shake, 0.78);
+  postUniforms.uChroma.value = Math.min(1.0, postUniforms.uChroma.value + 0.58);
   G.sound.hurt();
   triggerGamepadRumble(0.65, 160);
   $('damage-flash').style.opacity = '1';
+  let hpDmg = amount;
   if (state.armor > 0) {
-    const absorbed = Math.min(state.armor, amount);
+    /* Realistic Kevlar ballistic plate: absorbs 75% energy, 25% blunt trauma bleed-through */
+    const plateHit = amount * 0.75;
+    const absorbed = Math.min(state.armor, plateHit);
     state.armor -= absorbed;
-    amount -= absorbed;
+    hpDmg = amount - absorbed;
+  } else if (amount >= 14 && Math.random() < 0.45 && !(state.bleeding > 0)) {
+    /* Unarmored gunshot wound causes bleeding */
+    state.bleeding = 1.8;
+    state.bandageTimer = 0;
+    notify('TRAUMA', 'BLEEDING! CROUCH [C] IN COVER TO BANDAGE', 'danger');
   }
-  if (amount > 0) state.health -= amount;
+  if (hpDmg > 0) state.health -= hpDmg;
   updateHUD();
-  if (state.health <= 0) die();
+  if (state.health <= 0) { state.bleeding = 0; die(); }
 }
 
 function startReload() {
@@ -6163,9 +6545,26 @@ function pollGamepad(dt) {
    ============================================================ */
 function updatePlayer(dt) {
   state.damageTimer += dt;
+  /* Realistic bleeding trauma & crouch-in-cover bandaging */
+  if (state.bleeding > 0 && G.mode === 'playing') {
+    state.health -= state.bleeding * dt;
+    if (player.crouching && state.damageTimer > 1.2) {
+      state.bandageTimer = (state.bandageTimer || 0) + dt;
+      if (state.bandageTimer >= 2.2) {
+        state.bleeding = 0;
+        state.bandageTimer = 0;
+        notify('MEDICAL', 'WOUND BANDAGED — BLEEDING STOPPED', 'money');
+        G.sound.ui();
+      }
+    } else {
+      state.bandageTimer = 0;
+    }
+    if (Math.random() < dt * 3) updateHUD();
+    if (state.health <= 0) { state.bleeding = 0; die(); return; }
+  }
   const regenDelay = (G.gameMode !== 'bf' && RP_ROLES[rpRole] && RP_ROLES[rpRole].regenMult > 1) ? 4.0 : 7.0;
   const regenRate = 5.5 * ((G.gameMode !== 'bf' && RP_ROLES[rpRole]) ? RP_ROLES[rpRole].regenMult : 1.0);
-  if (state.damageTimer > regenDelay && state.health < 100 && G.mode === 'playing') {
+  if (!(state.bleeding > 0) && state.damageTimer > regenDelay && state.health < 100 && G.mode === 'playing') {
     state.health = Math.min(100, state.health + regenRate * dt);
     if (Math.random() < dt * 4) updateHUD();
   }
@@ -7159,6 +7558,8 @@ function startGame() {
   areaTimer = 0;
   state.health = 100;
   state.armor = 50;
+  state.bleeding = 0;
+  state.bandageTimer = 0;
   state.cash = 500;
   state.grenades = 3;
   state.wanted = 0;
@@ -7537,6 +7938,8 @@ function spawnAtBase(base) {
   player.onGround = true;
   state.health = 100;
   state.armor = cls.armor;
+  state.bleeding = 0;
+  state.bandageTimer = 0;
   state.grenades = cls.grenades;
   state.weapon = cls.weapon;
   player.attachments = cls.attachments.slice();
@@ -7634,7 +8037,8 @@ function performRPAction(act) {
     if (state.cash < cost) { notify('SUPPLY', 'NEED $' + cost + ' FOR MEDKIT', 'danger'); return; }
     state.cash -= cost;
     state.health = Math.min(100, state.health + 55);
-    notify('MEDICAL', 'MEDKIT APPLIED (+55 HP)', 'money');
+    state.bleeding = 0;
+    notify('MEDICAL', 'MEDKIT APPLIED (+55 HP · BLEEDING STOPPED)', 'money');
     G.sound.money();
   } else if (act === 'armor') {
     if (state.cash < 200) { notify('SUPPLY', 'NEED $200 FOR KEVLAR VEST', 'danger'); return; }
