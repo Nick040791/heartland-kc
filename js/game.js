@@ -1101,6 +1101,17 @@ const carCockpitRoot = new THREE.Group();
 carCockpitRoot.visible = false;
 weaponScene.add(carCockpitRoot);
 
+const vehicleDashRoot = new THREE.Group();
+vehicleDashRoot.visible = false;
+weaponScene.add(vehicleDashRoot);
+/* Generic dash panel (used for heli/plane/boat) */
+const dashPanel = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 0.8), new THREE.MeshStandardMaterial({ color: 0x1a1c24, roughness: 0.7, metalness: 0.2 }));
+dashPanel.position.set(0, -0.35, -0.9);
+vehicleDashRoot.add(dashPanel);
+const dashScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.35), new THREE.MeshBasicMaterial({ color: 0x1a2a3a, toneMapped: false }));
+dashScreen.position.set(0, -0.22, -0.85);
+vehicleDashRoot.add(dashScreen);
+
 let carCockpit = null;
 
 function setupCarCockpit() {
@@ -1439,7 +1450,11 @@ function updateCarCockpitView(dt) {
   const isCar = !activeVehicle || activeVehicle.type === 'car';
   const show = G.mode === 'playing' && !!activeVehicle && player.cameraMode === '1p' && isCar;
   carCockpitRoot.visible = show;
-  if (!show) return;
+  /* Generic dash for non-car vehicles */
+  const showDash = G.mode === 'playing' && !!activeVehicle && player.cameraMode === '1p' && !isCar;
+  vehicleDashRoot.visible = showDash;
+  if (!show && !showDash) return;
+  if (!show) return; /* skip car-specific anim for non-cars */
 
   const car = activeVehicle;
   /* Sync exterior hood paint color with the active vehicle */
@@ -4093,35 +4108,38 @@ function exitCar() {
    Extended Vehicle Physics: Helicopter, Plane, Boat
    ============================================================ */
 function updateDrivenHeli(dt, v) {
-  const throttle = Math.max(keys.KeyW ? 1 : 0, gamepadState.throttle);
-  const brake = Math.max(keys.KeyS ? 1 : 0, gamepadState.brake);
-  const yawInput = (keys.KeyA ? 1 : 0) - (keys.KeyD ? 1 : 0) + gamepadState.steer;
-  const upInput = (keys.KeyQ ? 1 : 0) - (keys.KeyE ? 1 : 0);
+  const forward = Math.max(keys.KeyW ? 1 : 0, gamepadState.throttle);
+  const backward = Math.max(keys.KeyS ? 1 : 0, gamepadState.brake);
+  const strafe = (keys.KeyA ? -1 : 0) + (keys.KeyD ? 1 : 0) + gamepadState.steer;
+  const upInput = (keys.KeyQ ? 1 : 0) - (keys.KeyE ? 1 : 0) + (keys.Space ? 0.5 : 0) - (keys.ShiftLeft || keys.ShiftRight ? 0.5 : 0);
   v.rotorPhase += dt * (4 + Math.abs(v.speed) * 0.4);
   if (v.model.rotorHub) v.model.rotorHub.rotation.y = v.rotorPhase;
   if (v.model.tailRotor) v.model.tailRotor.rotation.x = v.rotorPhase * 1.3;
-  if (throttle) v.verticalSpeed += 6 * dt;
-  if (brake) v.verticalSpeed -= 6 * dt;
+  /* Vertical thrust */
+  v.verticalSpeed += upInput * 8 * dt;
   v.verticalSpeed = clamp(v.verticalSpeed, -6, 8);
   v.verticalSpeed *= 1 - 0.6 * dt;
   v.y += v.verticalSpeed * dt;
   if (v.y < 0.6) { v.y = 0.6; v.verticalSpeed = 0; }
   if (v.y > 180) { v.y = 180; v.verticalSpeed = 0; }
-  v.heading += yawInput * dt * 1.6;
-  const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
-  if (upInput !== 0) v.speed += upInput * 14 * dt;
-  v.speed *= 1 - 1.4 * dt;
+  /* Forward/back thrust along heading */
+  const thrust = (forward - backward) * 14;
+  v.speed += (thrust - v.speed * 0.5) * dt;
   v.speed = clamp(v.speed, -8, v.maxSpeed);
-  const nx = v.x + fx * v.speed * dt;
-  const nz = v.z + fz * v.speed * dt;
+  /* Strafe (left/right) affects heading slightly + lateral */
+  v.heading += strafe * dt * 1.2;
+  const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
+  const rx = Math.cos(v.heading), rz = -Math.sin(v.heading);
+  const nx = v.x + (fx * v.speed + rx * strafe * 4) * dt;
+  const nz = v.z + (fz * v.speed + rz * strafe * 4) * dt;
   if (Math.abs(nx) < KC.WORLD_LIMIT && Math.abs(nz) < KC.WORLD_LIMIT) { v.x = nx; v.z = nz; }
   else v.speed *= -0.3;
   v.group.position.set(v.x, v.y, v.z);
   v.group.rotation.set(v.pitch, v.heading, v.roll);
-  v.pitch = lerp(v.pitch, clamp(-v.speed * 0.012, -0.25, 0.25), 1 - Math.exp(-dt * 3));
-  v.roll = lerp(v.roll, clamp(-yawInput * 0.18, -0.35, 0.35), 1 - Math.exp(-dt * 4));
+  v.pitch = lerp(v.pitch, clamp(-v.speed * 0.012, -0.3, 0.3), 1 - Math.exp(-dt * 4));
+  v.roll = lerp(v.roll, clamp(-strafe * 0.25, -0.4, 0.4), 1 - Math.exp(-dt * 4));
   player.pos.set(v.x, v.y - 0.6, v.z);
-  G.sound.updateEngine(Math.abs(v.speed) + Math.abs(v.verticalSpeed) * 0.5, throttle);
+  G.sound.updateEngine(Math.abs(v.speed) + Math.abs(v.verticalSpeed) * 0.5, (forward || backward) ? 1 : 0);
 }
 function updateDrivenPlane(dt, v) {
   const throttle = Math.max(keys.KeyW ? 1 : 0, gamepadState.throttle);
@@ -6863,7 +6881,10 @@ function wireUI() {
     if (!pointer.locked || G.mode !== 'playing') return;
     const zoomScale = player.aiming ? (0.7 / (ZOOM_LEVELS[player.zoomIndex] || 1.25)) : 1.0;
     const sens = pointer.sensitivity * 0.0021 * zoomScale;
-    if (activeVehicle) {
+    if (activeVehicle && activeVehicle.type === 'heli') {
+      activeVehicle.heading -= e.movementX * sens * 1.6;
+      activeVehicle.pitch = clamp(activeVehicle.pitch - e.movementY * sens * 1.4, -0.6, 0.6);
+    } else if (activeVehicle) {
       player.carLookYaw = clamp(player.carLookYaw - e.movementX * sens, -2.5, 2.5);
       player.carLookPitch = clamp(player.carLookPitch - e.movementY * sens, -0.4, 0.4);
     } else {
@@ -6982,7 +7003,7 @@ function tickHUD(dt) {
 function renderFrame() {
   renderer.clear();
   renderer.render(scene, camera);
-  if (G.mode === 'playing' && player.cameraMode === '1p' && (weaponRoot.visible || carCockpitRoot.visible)) {
+  if (G.mode === 'playing' && player.cameraMode === '1p' && (weaponRoot.visible || carCockpitRoot.visible || vehicleDashRoot.visible)) {
     renderer.clearDepth();
     renderer.render(weaponScene, weaponCamera);
   }
@@ -7199,6 +7220,7 @@ window.HEARTLAND = {
   clearRandomEvent,
   tryShoot,
   updatePlayer,
+  updateDrivenCar,
   updateAttachmentPickups,
   findNearestAttachmentPickup,
   pickupAttachment,
