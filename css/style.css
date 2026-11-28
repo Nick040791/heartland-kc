@@ -264,7 +264,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .mission-prompt { border-color: rgba(255,177,59,0.5); color: var(--amber); }
 @keyframes promptFloat { 0%,100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, -4px); } }
 
-.notifications { position: absolute; left: 32px; top: 312px; display: flex; flex-direction: column; gap: 5px; width: 320px; }
+.notifications { position: absolute; right: 32px; top: 158px; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; width: 320px; }
 .notification {
   display: flex; align-items: center; gap: 10px; padding: 7px 11px;
   background: linear-gradient(90deg, rgba(11,10,14,0.82), rgba(11,10,14,0.28));

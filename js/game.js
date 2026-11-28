@@ -343,10 +343,10 @@ const G = {
 };
 
 const WEAPONS = [
-  { name: '9MM PISTOL', slot: '01', mag: 12, damage: 28, rate: 0.17, spread: 0.012, adsSpread: 0.004, moveSpread: 0.025, range: 105, falloff: 0.6, recoil: 0.014, recoilH: 0.006, reload: 1.25, sound: 'pistol', headMult: 2.4 },
-  { name: 'VECTOR CARBINE', slot: '02', mag: 24, damage: 34, rate: 0.095, spread: 0.0075, adsSpread: 0.002, moveSpread: 0.018, range: 165, falloff: 0.75, recoil: 0.009, recoilH: 0.004, reload: 1.65, sound: 'rifle', headMult: 2.6 },
-  { name: 'PUMP SHOTGUN', slot: '03', mag: 8, damage: 95, rate: 0.95, spread: 0.06, adsSpread: 0.035, moveSpread: 0.09, range: 55, falloff: 0.4, recoil: 0.022, recoilH: 0.012, reload: 2.4, sound: 'rifle', headMult: 1.6, pellets: 8 },
-  { name: 'SNIPER RIFLE', slot: '04', mag: 5, damage: 110, rate: 0.85, spread: 0.0015, adsSpread: 0.0005, moveSpread: 0.012, range: 280, falloff: 0.85, recoil: 0.025, recoilH: 0.008, reload: 2.8, sound: 'rifle', headMult: 3.5 }
+  { name: '9MM PISTOL', slot: '01', mag: 12, damage: 42, rate: 0.17, spread: 0.011, adsSpread: 0.0035, moveSpread: 0.022, range: 110, falloff: 0.55, recoil: 0.013, recoilH: 0.005, reload: 1.25, sound: 'pistol', headMult: 2.8, torsoMult: 0.88, limbMult: 0.45 },
+  { name: 'VECTOR CARBINE', slot: '02', mag: 24, damage: 55, rate: 0.095, spread: 0.007, adsSpread: 0.002, moveSpread: 0.016, range: 175, falloff: 0.72, recoil: 0.0085, recoilH: 0.0038, reload: 1.6, sound: 'rifle', headMult: 2.8, torsoMult: 0.95, limbMult: 0.50 },
+  { name: 'PUMP SHOTGUN', slot: '03', mag: 8, damage: 240, rate: 0.82, spread: 0.026, adsSpread: 0.018, moveSpread: 0.04, range: 48, falloff: 0.18, recoil: 0.024, recoilH: 0.010, reload: 2.2, sound: 'rifle', headMult: 2.2, torsoMult: 0.95, limbMult: 0.65, pellets: 8 },
+  { name: 'SNIPER RIFLE', slot: '04', mag: 5, damage: 118, rate: 0.85, spread: 0.0012, adsSpread: 0.0003, moveSpread: 0.010, range: 300, falloff: 0.88, recoil: 0.025, recoilH: 0.007, reload: 2.6, sound: 'rifle', headMult: 3.5, torsoMult: 0.96, limbMult: 0.55 }
 ];
 
 const ZOOM_LEVELS = [1.25, 2.0, 3.2];
@@ -1377,13 +1377,72 @@ weaponScene.add(carCockpitRoot);
 const vehicleDashRoot = new THREE.Group();
 vehicleDashRoot.visible = false;
 weaponScene.add(vehicleDashRoot);
-/* Generic dash panel (used for heli/plane/boat) */
-const dashPanel = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.5, 0.8), new THREE.MeshStandardMaterial({ color: 0x1a1c24, roughness: 0.7, metalness: 0.2 }));
-dashPanel.position.set(0, -0.35, -0.9);
-vehicleDashRoot.add(dashPanel);
-const dashScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.35), new THREE.MeshBasicMaterial({ color: 0x1a2a3a, toneMapped: false }));
-dashScreen.position.set(0, -0.22, -0.85);
-vehicleDashRoot.add(dashScreen);
+
+/* Authentic PS1 Tactical Aircraft / Gunship / Boat Cockpit */
+const airCockpit = (() => {
+  const g = new THREE.Group();
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x1a1e24, roughness: 0.72, metalness: 0.35, flatShading: true });
+  const consoleMat = new THREE.MeshStandardMaterial({ color: 0x22262e, roughness: 0.65, metalness: 0.4, flatShading: true });
+  const mfdGreen = new THREE.MeshBasicMaterial({ color: 0x246b4c, toneMapped: false });
+  const mfdAmber = new THREE.MeshBasicMaterial({ color: 0xd99b26, toneMapped: false });
+  const hudLineMat = new THREE.MeshBasicMaterial({ color: 0x57e6c2, toneMapped: false });
+
+  /* Low glare-shield console (leaves full clear forward sightline) */
+  const glareShield = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.24, 0.56), frameMat);
+  glareShield.position.set(0, -0.44, -0.92);
+  g.add(glareShield);
+  const centerPod = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.14, 0.44), consoleMat);
+  centerPod.position.set(0, -0.32, -0.95);
+  g.add(centerPod);
+
+  /* Dual Avionics MFD Displays + Artificial Horizon Bar */
+  const leftMfd = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.14), mfdGreen);
+  leftMfd.position.set(-0.34, -0.37, -0.635);
+  leftMfd.rotation.x = -0.25;
+  g.add(leftMfd);
+  const rightMfd = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.14), mfdGreen);
+  rightMfd.position.set(0.34, -0.37, -0.635);
+  rightMfd.rotation.x = -0.25;
+  g.add(rightMfd);
+  const horizonPivot = new THREE.Group();
+  horizonPivot.position.set(0, -0.33, -0.72);
+  const horizonBar = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.012, 0.01), hudLineMat);
+  horizonPivot.add(horizonBar);
+  g.add(horizonPivot);
+  /* Warning / status indicator LEDs */
+  for (let i = -2; i <= 2; i++) {
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.016, 0.01), i === 0 ? mfdAmber : hudLineMat);
+    led.position.set(i * 0.06, -0.275, -0.725);
+    g.add(led);
+  }
+
+  /* Sloped Armored Canopy Frame Struts (outer left & right edges + top arch) */
+  for (const sx of [-1, 1]) {
+    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.045, 1.05, 0.055), frameMat);
+    strut.position.set(sx * 0.78, 0.06, -0.82);
+    strut.rotation.z = sx * 0.24;
+    strut.rotation.x = 0.28;
+    g.add(strut);
+  }
+  const topBow = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.04, 0.055), frameMat);
+  topBow.position.set(0, 0.50, -0.66);
+  g.add(topBow);
+
+  /* Animated Cyclic Flight Stick */
+  const stickPivot = new THREE.Group();
+  stickPivot.position.set(0, -0.62, -0.64);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.28, 6), frameMat);
+  shaft.position.y = 0.14;
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.10, 0.055), consoleMat);
+  grip.position.set(0, 0.27, 0.01);
+  const triggerBtn = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.022, 0.02), new THREE.MeshBasicMaterial({ color: 0xff3b3b, toneMapped: false }));
+  triggerBtn.position.set(0, 0.30, 0.03);
+  stickPivot.add(shaft, grip, triggerBtn);
+  g.add(stickPivot);
+
+  vehicleDashRoot.add(g);
+  return { group: g, horizonPivot, stickPivot };
+})();
 
 let carCockpit = null;
 
@@ -1720,14 +1779,25 @@ function drawCockpitCanvases(car) {
 
 function updateCarCockpitView(dt) {
   if (!carCockpit) return;
-  const isCar = !activeVehicle || activeVehicle.type === 'car';
+  const isCar = !activeVehicle || !activeVehicle.type || activeVehicle.type === 'car';
   const show = G.mode === 'playing' && !!activeVehicle && player.cameraMode === '1p' && isCar;
   carCockpitRoot.visible = show;
-  /* Generic dash for non-car vehicles */
+  /* Tactical aircraft/boat cockpit for heli, plane & boat */
   const showDash = G.mode === 'playing' && !!activeVehicle && player.cameraMode === '1p' && !isCar;
   vehicleDashRoot.visible = showDash;
   if (!show && !showDash) return;
-  if (!show) return; /* skip car-specific anim for non-cars */
+  if (showDash && airCockpit) {
+    const v = activeVehicle;
+    const kbSteer = (keys.KeyA ? 1 : 0) - (keys.KeyD ? 1 : 0);
+    const vib = Math.sin(gameTime * 34) * 0.0018;
+    airCockpit.horizonPivot.rotation.z = -(v.roll || 0);
+    airCockpit.horizonPivot.position.y = -0.33 + clamp((v.pitch || 0) * 0.14, -0.05, 0.05);
+    airCockpit.stickPivot.rotation.z = lerp(airCockpit.stickPivot.rotation.z, kbSteer * 0.25, 1 - Math.exp(-dt * 10));
+    airCockpit.stickPivot.rotation.x = lerp(airCockpit.stickPivot.rotation.x, (v.pitch || 0) * 0.45, 1 - Math.exp(-dt * 10));
+    airCockpit.group.position.set(0, vib, 0);
+    airCockpit.group.rotation.set(clamp(-player.carLookPitch * 0.35, -0.2, 0.2), clamp(-player.carLookYaw * 0.25, -0.25, 0.25), 0);
+    return;
+  }
 
   const car = activeVehicle;
   /* Sync exterior hood paint color with the active vehicle */
@@ -4007,7 +4077,8 @@ function tryShoot() {
   for (let pi = 0; pi < pellets; pi++) {
     const dir = new THREE.Vector3();
     camera.getWorldDirection(dir);
-    const pSpread = pellets > 1 ? effSpread * 2.2 : effSpread;
+    /* Realistic buckshot choke: center pellets tight, outer pellets form pattern */
+    const pSpread = pellets > 1 ? (pi === 0 ? effSpread * 0.35 : effSpread * 1.45) : effSpread;
     dir.x += rand(-1, 1) * pSpread;
     dir.y += rand(-1, 1) * pSpread;
     dir.z += rand(-1, 1) * pSpread;
@@ -4024,13 +4095,19 @@ function tryShoot() {
         const part = h.object.userData.part || 'torso';
         const head = part === 'head';
         const dist = origin.distanceTo(h.point);
-        const falloff = clamp(1 - (dist / w.range) * (1 - (w.falloff || 0.6)), w.falloff || 0.6, 1);
+        let falloff;
+        if (pellets > 1) {
+          /* Shotgun: lethal full stopping power within 11m, sharp falloff at range */
+          falloff = dist <= 11 ? 1.0 : clamp(1 - ((dist - 11) / Math.max(1, w.range - 11)) * (1 - (w.falloff || 0.18)), w.falloff || 0.18, 1);
+        } else {
+          falloff = clamp(1 - (dist / w.range) * (1 - (w.falloff || 0.6)), w.falloff || 0.6, 1);
+        }
         let partMult = 1.0;
-        if (part === 'head') partMult = (w.headMult || 2.4);
-        else if (part === 'torso') partMult = 0.55; /* 2 shots to kill */
-        else if (part === 'limb') partMult = 0.27; /* 4 shots to kill */
-        /* Ensure headshot is lethal */
-        if (part === 'head') partMult = Math.max(partMult, 100 / Math.max(1, w.damage));
+        if (part === 'head') partMult = (w.headMult || 2.8);
+        else if (part === 'torso') partMult = (w.torsoMult || 0.92);
+        else if (part === 'limb') partMult = (w.limbMult || 0.48);
+        /* Ensure single-bullet headshots are always lethal */
+        if (part === 'head' && pellets === 1) partMult = Math.max(partMult, 120 / Math.max(1, w.damage));
         const dmg = (w.damage / pellets) * partMult * falloff;
         damageActor(actor, dmg, h.point, head);
       } else if (h.object.userData.car) {
@@ -4673,6 +4750,9 @@ function toggleCameraMode() {
   player.cameraMode = player.cameraMode === '1p' ? '3p' : '1p';
   player.carLookYaw = 0;
   player.carLookPitch = 0;
+  if (activeVehicle) {
+    activeVehicle.group.visible = player.cameraMode === '3p';
+  }
   G.sound.ui();
   notify('CAMERA', player.cameraMode === '3p' ? '3RD PERSON VIEW [V]' : '1ST PERSON VIEW [V]');
   updateHUD();
@@ -4771,15 +4851,6 @@ function enterCar(car) {
   car.group.visible = player.cameraMode === '3p';
   if (playerRig) playerRig.group.visible = false;
   car.speed = 0;
-  if (car.type === 'heli' || car.type === 'plane' || car.type === 'boat') {
-    carCockpitRoot.visible = false;
-    G.sound.enterCar();
-    G.sound.startEngine();
-    carLight.intensity = 0;
-    updateHUD();
-    notify('VEHICLE', car.type === 'heli' ? 'HELICOPTER ACQUIRED' : car.type === 'plane' ? 'AIRCRAFT ACQUIRED' : 'BOAT ACQUIRED', '');
-    return;
-  }
   state.firing = false;
   pointer.firing = false;
   player.aiming = false;
@@ -4787,6 +4858,17 @@ function enterCar(car) {
   state.reloading = false;
   player.carLookYaw = 0;
   player.carLookPitch = 0;
+  if (car.type === 'heli' || car.type === 'plane' || car.type === 'boat') {
+    carCockpitRoot.visible = false;
+    vehicleDashRoot.visible = player.cameraMode === '1p';
+    G.sound.enterCar();
+    G.sound.startEngine();
+    carLight.intensity = 0;
+    updateCarCockpitView(0);
+    updateHUD();
+    notify('VEHICLE', car.type === 'heli' ? 'HELICOPTER ACQUIRED · [V] CAM · SPACE/SHIFT ALT' : car.type === 'plane' ? 'AIRCRAFT ACQUIRED · [V] CAM · SPACE/SHIFT PITCH' : 'GUNBOAT ACQUIRED · [V] CAM', '');
+    return;
+  }
   G.sound.enterCar();
   G.sound.startEngine();
   carLight.intensity = 85;
@@ -4795,7 +4877,7 @@ function enterCar(car) {
   drawCockpitCanvases(car);
   updateCarCockpitView(0);
   updateHUD();
-  notify('VEHICLE', car.isPolice ? 'POLICE CRUISER ACQUIRED' : 'VEHICLE ACQUIRED', '');
+  notify('VEHICLE', car.isPolice ? 'POLICE CRUISER ACQUIRED' : car.style === 'humvee' ? 'TACTICAL HUMVEE ACQUIRED' : 'VEHICLE ACQUIRED', '');
 }
 
 function exitCar() {
@@ -4805,6 +4887,7 @@ function exitCar() {
   car.group.visible = true;
   car.speed = 0;
   carCockpitRoot.visible = false;
+  vehicleDashRoot.visible = false;
   const heading = car.heading;
   const side = new THREE.Vector3(Math.cos(heading), 0, -Math.sin(heading));
   const candidates = [
@@ -4835,63 +4918,66 @@ function updateDrivenHeli(dt, v) {
   const forward = Math.max(keys.KeyW ? 1 : 0, gamepadState.throttle);
   const backward = Math.max(keys.KeyS ? 1 : 0, gamepadState.brake);
   const strafe = (keys.KeyA ? -1 : 0) + (keys.KeyD ? 1 : 0) + gamepadState.steer;
-  const upInput = (keys.KeyQ ? 1 : 0) - (keys.KeyE ? 1 : 0) + (keys.Space ? 0.5 : 0) - (keys.ShiftLeft || keys.ShiftRight ? 0.5 : 0);
-  v.rotorPhase += dt * (4 + Math.abs(v.speed) * 0.4);
+  const upInput = (keys.Space || keys.KeyQ ? 1 : 0) - (keys.ShiftLeft || keys.ShiftRight || keys.KeyC ? 1 : 0);
+  v.rotorPhase += dt * (8 + Math.abs(v.speed) * 0.65);
   if (v.model.rotorHub) v.model.rotorHub.rotation.y = v.rotorPhase;
-  if (v.model.tailRotor) v.model.tailRotor.rotation.x = v.rotorPhase * 1.3;
+  if (v.model.tailRotor) v.model.tailRotor.rotation.x = v.rotorPhase * 1.4;
   /* Vertical thrust */
-  v.verticalSpeed += upInput * 8 * dt;
-  v.verticalSpeed = clamp(v.verticalSpeed, -6, 8);
-  v.verticalSpeed *= 1 - 0.6 * dt;
+  v.verticalSpeed += upInput * 11 * dt;
+  v.verticalSpeed = clamp(v.verticalSpeed, -8, 10);
+  v.verticalSpeed *= 1 - 0.9 * dt;
   v.y += v.verticalSpeed * dt;
   if (v.y < 0.6) { v.y = 0.6; v.verticalSpeed = 0; }
   if (v.y > 180) { v.y = 180; v.verticalSpeed = 0; }
   /* Forward/back thrust along heading */
-  const thrust = (forward - backward) * 14;
-  v.speed += (thrust - v.speed * 0.5) * dt;
-  v.speed = clamp(v.speed, -8, v.maxSpeed);
-  /* Strafe (left/right) affects heading slightly + lateral */
-  v.heading += strafe * dt * 1.2;
+  const thrust = (forward - backward) * 16;
+  v.speed += (thrust - v.speed * 0.55) * dt;
+  v.speed = clamp(v.speed, -10, v.maxSpeed);
+  /* Strafe / yaw */
+  v.heading -= strafe * dt * 1.1;
   const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
   const rx = Math.cos(v.heading), rz = -Math.sin(v.heading);
-  const nx = v.x + (fx * v.speed + rx * strafe * 4) * dt;
-  const nz = v.z + (fz * v.speed + rz * strafe * 4) * dt;
+  const nx = v.x + (fx * v.speed + rx * strafe * 5.5) * dt;
+  const nz = v.z + (fz * v.speed + rz * strafe * 5.5) * dt;
   if (Math.abs(nx) < KC.WORLD_LIMIT && Math.abs(nz) < KC.WORLD_LIMIT) { v.x = nx; v.z = nz; }
   else v.speed *= -0.3;
+  v.pitch = lerp(v.pitch, clamp(-v.speed * 0.011, -0.28, 0.28), 1 - Math.exp(-dt * 4));
+  v.roll = lerp(v.roll, clamp(-strafe * 0.28, -0.42, 0.42), 1 - Math.exp(-dt * 4));
   v.group.position.set(v.x, v.y, v.z);
+  v.group.rotation.order = 'YXZ';
   v.group.rotation.set(v.pitch, v.heading, v.roll);
-  v.pitch = lerp(v.pitch, clamp(-v.speed * 0.012, -0.3, 0.3), 1 - Math.exp(-dt * 4));
-  v.roll = lerp(v.roll, clamp(-strafe * 0.25, -0.4, 0.4), 1 - Math.exp(-dt * 4));
   player.pos.set(v.x, v.y - 0.6, v.z);
-  G.sound.updateEngine(Math.abs(v.speed) + Math.abs(v.verticalSpeed) * 0.5, (forward || backward) ? 1 : 0);
+  G.sound.updateEngine(Math.abs(v.speed) + Math.abs(v.verticalSpeed) * 0.5, (forward || backward || upInput) ? 1 : 0);
 }
 function updateDrivenPlane(dt, v) {
   const throttle = Math.max(keys.KeyW ? 1 : 0, gamepadState.throttle);
   const brake = Math.max(keys.KeyS ? 1 : 0, gamepadState.brake);
   const steer = (keys.KeyA ? 1 : 0) - (keys.KeyD ? 1 : 0) + gamepadState.steer;
-  const pitchInput = (keys.KeyQ ? 1 : 0) - (keys.KeyE ? 1 : 0);
-  if (throttle) v.speed += 14 * dt;
-  if (brake) v.speed -= 22 * dt;
-  if (!throttle && !brake) v.speed *= 1 - 0.8 * dt;
+  const pitchInput = (keys.Space || keys.KeyQ ? 1 : 0) - (keys.ShiftLeft || keys.ShiftRight || keys.KeyC ? 1 : 0);
+  if (throttle) v.speed += 18 * dt;
+  if (brake) v.speed -= 24 * dt;
+  if (!throttle && !brake) v.speed *= 1 - 0.45 * dt;
   v.speed = clamp(v.speed, 0, v.maxSpeed);
-  if (v.speed < 6) v.speed = Math.max(0, v.speed - 4 * dt);
-  v.heading += steer * dt * 1.2 * clamp(v.speed / 12, 0.2, 1);
-  v.pitch = lerp(v.pitch, clamp(pitchInput * 0.35 + (v.speed < 12 ? -0.08 : 0), -0.45, 0.45), 1 - Math.exp(-dt * 3));
-  v.roll = lerp(v.roll, clamp(-steer * 0.45, -0.6, 0.6), 1 - Math.exp(-dt * 4));
+  v.heading += steer * dt * 1.25 * clamp(v.speed / 12, 0.25, 1);
+  const airborne = v.y > 2.2;
+  const targetPitch = clamp(pitchInput * 0.42 + (airborne && v.speed < 14 ? -0.10 : 0), -0.52, 0.52);
+  v.pitch = lerp(v.pitch, targetPitch, 1 - Math.exp(-dt * 3.5));
+  v.roll = lerp(v.roll, clamp(steer * 0.52, -0.65, 0.65), 1 - Math.exp(-dt * 4.5));
   const fx = -Math.sin(v.heading) * Math.cos(v.pitch);
   const fy = Math.sin(v.pitch);
   const fz = -Math.cos(v.heading) * Math.cos(v.pitch);
   v.x += fx * v.speed * dt;
   v.y += fy * v.speed * dt;
   v.z += fz * v.speed * dt;
-  v.y = clamp(v.y, 1.5, 140);
+  v.y = clamp(v.y, 1.5, 160);
   if (Math.abs(v.x) > KC.WORLD_LIMIT || Math.abs(v.z) > KC.WORLD_LIMIT) { v.speed *= 0.4; }
   v.group.position.set(v.x, v.y, v.z);
+  v.group.rotation.order = 'YXZ';
   v.group.rotation.set(v.pitch, v.heading, v.roll);
-  if (v.model.prop) v.model.prop.rotation.x += v.speed * dt * 18;
+  if (v.model.prop) v.model.prop.rotation.z += (4 + v.speed * 1.2) * dt * 6;
   player.pos.set(v.x, v.y - 0.6, v.z);
   G.sound.updateEngine(v.speed, throttle);
-  if (v.y <= 1.6 && v.speed > 14) { v.speed *= 0.2; player.shake = Math.max(player.shake, 0.8); G.sound.crash(0.8); }
+  if (v.y <= 1.55 && v.pitch < -0.25 && v.speed > 20) { v.speed *= 0.35; player.shake = Math.max(player.shake, 0.7); G.sound.crash(0.7); }
 }
 function updateDrivenBoat(dt, v) {
   const throttle = Math.max(keys.KeyW ? 1 : 0, gamepadState.throttle);
@@ -6331,57 +6417,64 @@ function updateCameraOnFoot(dt, moving, strafe) {
 }
 
 function updateCameraHeli(dt, v) {
-  const shake = player.shake;
+  v.group.visible = player.cameraMode === '3p';
   const camYaw = v.heading + player.carLookYaw;
-  const camPitch = clamp(player.carLookPitch, -0.6, 0.6);
+  const camPitch = clamp(player.carLookPitch, -0.65, 0.65);
+  const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
   if (player.cameraMode === '1p') {
-    const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
-    camera.position.set(v.x + fx * 0.6, v.y + 0.35, v.z + fz * 0.6);
+    /* Pilot cockpit seat behind sloped gunship canopy */
+    camera.position.set(v.x + fx * 1.65, v.y + 1.38, v.z + fz * 1.65);
     camera.rotation.order = 'YXZ';
-    camera.rotation.set(camPitch - 0.05, camYaw, 0);
+    camera.rotation.set(clamp(camPitch + (v.pitch || 0) * 0.75 - 0.04, -0.85, 0.85), camYaw, (v.roll || 0) * 0.65);
   } else {
+    /* 3rd-Person Chase Camera behind Helicopter */
     const backX = Math.sin(camYaw), backZ = Math.cos(camYaw);
-    const dist = 9.0;
-    camera.position.set(v.x + backX * dist, v.y + 4.5, v.z + backZ * dist);
-    camera.lookAt(v.x, v.y + 0.5, v.z);
+    const dist = 11.2 + clamp(Math.abs(v.speed) / 14, 0, 2.2);
+    camera.position.set(v.x + backX * dist, Math.max(1.2, v.y + 4.4 - camPitch * 4.5), v.z + backZ * dist);
+    camera.lookAt(v.x - backX * 4.0, v.y + 1.2 + camPitch * 3.0, v.z - backZ * 4.0);
     camera.rotation.order = 'YXZ';
   }
-  const targetFov = 75;
+  const targetFov = player.cameraMode === '3p' ? 78 : 76;
   if (Math.abs(camera.fov - targetFov) > 0.05) { camera.fov = lerp(camera.fov, targetFov, 1 - Math.exp(-dt * 7)); camera.updateProjectionMatrix(); }
   carLight.intensity = 0;
 }
 function updateCameraPlane(dt, v) {
+  v.group.visible = player.cameraMode === '3p';
   const camYaw = v.heading + player.carLookYaw;
-  const camPitch = clamp(v.pitch + player.carLookPitch, -0.9, 0.9);
+  const camPitch = clamp((v.pitch || 0) + player.carLookPitch, -0.9, 0.9);
+  const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
   if (player.cameraMode === '1p') {
-    camera.position.set(v.x - Math.sin(v.heading) * 0.6, v.y + 0.4, v.z - Math.cos(v.heading) * 0.6);
+    /* Fighter pilot bubble canopy eye level */
+    camera.position.set(v.x + fx * 1.15, v.y + 1.72, v.z + fz * 1.15);
     camera.rotation.order = 'YXZ';
-    camera.rotation.set(camPitch, camYaw, v.roll);
+    camera.rotation.set(camPitch, camYaw, (v.roll || 0) * 0.85);
   } else {
+    /* 3rd-Person Fighter Chase Camera */
     const backX = Math.sin(camYaw), backZ = Math.cos(camYaw);
-    const dist = 12.0;
-    camera.position.set(v.x + backX * dist, v.y + 5.0, v.z + backZ * dist);
-    camera.lookAt(v.x, v.y, v.z);
+    const dist = 13.8 + clamp(v.speed / 16, 0, 3.2);
+    camera.position.set(v.x + backX * dist, Math.max(1.8, v.y + 4.6 - (v.pitch || 0) * 5.0), v.z + backZ * dist);
+    camera.lookAt(v.x - backX * 6.0, v.y + 1.2 + (v.pitch || 0) * 5.0, v.z - backZ * 6.0);
     camera.rotation.order = 'YXZ';
   }
-  const targetFov = 70;
+  const targetFov = player.cameraMode === '3p' ? 80 : 75;
   if (Math.abs(camera.fov - targetFov) > 0.05) { camera.fov = lerp(camera.fov, targetFov, 1 - Math.exp(-dt * 7)); camera.updateProjectionMatrix(); }
   carLight.intensity = 0;
 }
 function updateCameraBoat(dt, v) {
-  const shake = player.shake;
+  v.group.visible = player.cameraMode === '3p';
   const camYaw = v.heading + player.carLookYaw;
-  const camPitch = clamp(player.carLookPitch, -0.4, 0.4);
+  const camPitch = clamp(player.carLookPitch, -0.45, 0.45);
+  const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
   if (player.cameraMode === '1p') {
-    const offset = new THREE.Vector3(0, 1.5, -1.0).applyAxisAngle(new THREE.Vector3(0, 1, 0), v.heading);
-    camera.position.set(v.x + offset.x, v.y + 1.6, v.z + offset.z);
+    /* Patrol Gunboat armored wheelhouse bridge */
+    camera.position.set(v.x + fx * 0.45, v.y + 1.92, v.z + fz * 0.45);
     camera.rotation.order = 'YXZ';
-    camera.rotation.set(camPitch + v.pitch, camYaw, v.roll * 0.4);
+    camera.rotation.set(camPitch + (v.pitch || 0), camYaw, (v.roll || 0) * 0.45);
   } else {
     const backX = Math.sin(camYaw), backZ = Math.cos(camYaw);
-    const dist = 8.0;
-    camera.position.set(v.x + backX * dist, v.y + 3.5, v.z + backZ * dist);
-    camera.lookAt(v.x, v.y + 0.5, v.z);
+    const dist = 9.5;
+    camera.position.set(v.x + backX * dist, v.y + 3.8, v.z + backZ * dist);
+    camera.lookAt(v.x - backX * 3.0, v.y + 1.1, v.z - backZ * 3.0);
     camera.rotation.order = 'YXZ';
   }
   const targetFov = 78;
@@ -6395,6 +6488,7 @@ function updateCameraCar(dt) {
   if (v.type === 'plane') { updateCameraPlane(dt, v); return; }
   if (v.type === 'boat') { updateCameraBoat(dt, v); return; }
   const car = activeVehicle;
+  car.group.visible = player.cameraMode === '3p';
   const shake = player.shake;
   const sx = (Math.random() - 0.5) * shake * 0.02;
   const sy = (Math.random() - 0.5) * shake * 0.02;
@@ -6404,16 +6498,18 @@ function updateCameraCar(dt) {
   const camPitch = clamp(player.carLookPitch + (Math.random() - 0.5) * shake * 0.02, -0.45, 0.45);
 
   if (player.cameraMode === '1p') {
-    const offset = new THREE.Vector3(0, 1.3, -0.55).applyAxisAngle(new THREE.Vector3(0, 1, 0), car.heading);
-    camera.position.set(car.x + offset.x + sx, 1.33 + sy, car.z + offset.z);
+    const isTall = car.style === 'humvee' || car.style === 'suv' || car.style === 'van' || car.style === 'armored';
+    const eyeY = isTall ? 1.56 : 1.32;
+    const offset = new THREE.Vector3(-0.28, eyeY, -0.18).applyAxisAngle(new THREE.Vector3(0, 1, 0), car.heading);
+    camera.position.set(car.x + offset.x + sx, eyeY + sy, car.z + offset.z);
     camera.rotation.order = 'YXZ';
-    camera.rotation.set(camPitch, camYaw, -steer * 0.014 * clamp(Math.abs(car.speed) / 10, 0, 1));
+    camera.rotation.set(camPitch, camYaw, -steer * 0.016 * clamp(Math.abs(car.speed) / 10, 0, 1));
   } else {
     /* 3rd-Person Chase Camera behind vehicle */
     const backX = Math.sin(camYaw), backZ = Math.cos(camYaw);
-    const dist = 6.2 + clamp(car.speed / 12, 0, 1.4);
-    camera.position.set(car.x + backX * dist + sx, 2.55 + sy, car.z + backZ * dist);
-    camera.lookAt(car.x - backX * 2.5, 1.05 + camPitch * 2, car.z - backZ * 2.5);
+    const dist = 6.4 + clamp(Math.abs(car.speed) / 12, 0, 1.5);
+    camera.position.set(car.x + backX * dist + sx, 2.65 + sy, car.z + backZ * dist);
+    camera.lookAt(car.x - backX * 2.5, 1.15 + camPitch * 2, car.z - backZ * 2.5);
     camera.rotation.order = 'YXZ';
   }
 
