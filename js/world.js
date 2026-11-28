@@ -2020,17 +2020,20 @@ KC.buildBattlefield = function (scene) {
      COMBINED-ARMS VEHICLES (Humvees, Helicopters, Plane, Boats)
      ============================================================ */
   city.parkedSpots = [
-    /* Allied FOB Motorpool (ECHO) */
+    /* Allied FOB Motorpool (ECHO) — Humvees + M1A2 Main Battle Tank */
     { x: 106, z: 132, heading: Math.PI, color: 0x4a5a3a, style: 'humvee', kind: 'parked' },
     { x: 134, z: 132, heading: Math.PI, color: 0x3b4d38, style: 'humvee', kind: 'parked' },
-    /* Central Rail Depot & Roads */
+    { x: 118, z: 122, heading: Math.PI, color: 0x5c5b46, style: 'tank', kind: 'parked' },
+    /* Central Rail Depot & Roads — Contested MBT & Humvees */
     { x: 24, z: 36, heading: 0, color: 0x7b6d4c, style: 'humvee', kind: 'parked' },
+    { x: 34, z: -12, heading: 0, color: 0x4b5340, style: 'tank', kind: 'parked' },
     { x: 16, z: -56, heading: Math.PI, color: 0x4a5240, style: 'humvee', kind: 'parked' },
     /* Bravo Artillery Ridge & Delta Docks */
     { x: 124, z: -105, heading: Math.PI / 2, color: 0x5c533e, style: 'humvee', kind: 'parked' },
     { x: -102, z: 96, heading: 0, color: 0x3a4a5c, style: 'suv', kind: 'parked' },
-    /* Opfor Fortress (ALPHA) */
-    { x: -42, z: -172, heading: 0, color: 0x3d3632, style: 'humvee', kind: 'parked' },
+    /* Opfor Fortress (ALPHA) — Heavy Tank & Armored APC */
+    { x: -34, z: -176, heading: 0, color: 0x3f4338, style: 'tank', kind: 'parked' },
+    { x: -46, z: -172, heading: 0, color: 0x3d3632, style: 'humvee', kind: 'parked' },
     { x: -58, z: -172, heading: 0, color: 0x4a3230, style: 'armored', kind: 'parked' }
   ];
 

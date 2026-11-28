@@ -337,6 +337,8 @@ const FX_GLOW_TEX = KC.makeGlowTexture(0.4);
 
 let city = null;
 let activeVehicle = null;
+let activeSeat = 'driver'; // 'driver' | 'gunner' | 'passenger'
+const PLAYER_TEAM = 'blue';
 let nearestCar = null;
 let contractMarker = null;
 let playerRig = null;
@@ -371,7 +373,8 @@ const BF_CLASSES = {
   assault: { name: 'ASSAULT', weapon: 1, armor: 60, grenades: 3, attachments: ['grip'] },
   recon: { name: 'RECON', weapon: 3, armor: 40, grenades: 2, attachments: ['scope', 'silencer'] },
   breacher: { name: 'BREACHER', weapon: 2, armor: 80, grenades: 4, attachments: ['extmag'] },
-  support: { name: 'SUPPORT', weapon: 1, armor: 100, grenades: 3, attachments: ['extmag', 'grip'] }
+  support: { name: 'SUPPORT', weapon: 1, armor: 100, grenades: 3, attachments: ['extmag', 'grip'] },
+  antiarmor: { name: 'ANTI-ARMOR', weapon: 4, armor: 70, grenades: 2, attachments: [] }
 };
 
 const RP_ROLES = {
@@ -401,18 +404,23 @@ const WEAPONS = [
   { name: '9MM PISTOL', slot: '01', mag: 12, damage: 42, rate: 0.17, spread: 0.011, adsSpread: 0.0035, moveSpread: 0.022, range: 110, falloff: 0.55, recoil: 0.013, recoilH: 0.005, reload: 1.25, sound: 'pistol', headMult: 2.8, torsoMult: 0.88, limbMult: 0.45 },
   { name: 'VECTOR CARBINE', slot: '02', mag: 24, damage: 55, rate: 0.095, spread: 0.007, adsSpread: 0.002, moveSpread: 0.016, range: 175, falloff: 0.72, recoil: 0.0085, recoilH: 0.0038, reload: 1.6, sound: 'rifle', headMult: 2.8, torsoMult: 0.95, limbMult: 0.50 },
   { name: 'PUMP SHOTGUN', slot: '03', mag: 8, damage: 240, rate: 0.82, spread: 0.026, adsSpread: 0.018, moveSpread: 0.04, range: 48, falloff: 0.18, recoil: 0.024, recoilH: 0.010, reload: 2.2, sound: 'rifle', headMult: 2.2, torsoMult: 0.95, limbMult: 0.65, pellets: 8 },
-  { name: 'SNIPER RIFLE', slot: '04', mag: 5, damage: 118, rate: 0.85, spread: 0.0012, adsSpread: 0.0003, moveSpread: 0.010, range: 300, falloff: 0.88, recoil: 0.025, recoilH: 0.007, reload: 2.6, sound: 'rifle', headMult: 3.5, torsoMult: 0.96, limbMult: 0.55 }
+  { name: 'SNIPER RIFLE', slot: '04', mag: 5, damage: 118, rate: 0.85, spread: 0.0012, adsSpread: 0.0003, moveSpread: 0.010, range: 300, falloff: 0.88, recoil: 0.025, recoilH: 0.007, reload: 2.6, sound: 'rifle', headMult: 3.5, torsoMult: 0.96, limbMult: 0.55, scoped: true }
 ];
 
 const BF_WEAPONS = [
   { ...WEAPONS[0], name: 'M1911 .45 PISTOL', mag: 8, damage: 48, rate: 0.24, reload: 1.4 },
   { ...WEAPONS[1], name: 'M4A1 CARBINE', mag: 30, damage: 36, rate: 0.09, spread: 0.008, range: 190, reload: 1.7 },
   { ...WEAPONS[2], name: 'AK-47 ASSAULT RIFLE', mag: 30, damage: 43, rate: 0.12, spread: 0.012, adsSpread: 0.004, moveSpread: 0.022, range: 175, falloff: 0.68, recoil: 0.012, reload: 1.9, pellets: 1 },
-  { ...WEAPONS[3], name: 'M24 MARKSMAN RIFLE', mag: 5, damage: 118 }
+  { ...WEAPONS[3], name: 'M24 MARKSMAN RIFLE', mag: 5, damage: 118 },
+  { name: 'RPG-7 ROCKET LAUNCHER', slot: '05', mag: 3, damage: 190, rate: 0.9, spread: 0, adsSpread: 0, moveSpread: 0, range: 220, falloff: 0.72, recoil: 0.065, recoilH: 0.02, reload: 2.8, sound: 'rifle', headMult: 1, torsoMult: 1, limbMult: 1, kind: 'rocket', blastRadius: 9.5 }
 ];
 
 function getWeaponSpec(index = state.weapon) {
   return (G.gameMode === 'bf' ? BF_WEAPONS : WEAPONS)[index];
+}
+
+function weaponHasScope(weapon = getWeaponSpec()) {
+  return !!weapon && (weapon.scoped || player.attachments.indexOf('scope') !== -1);
 }
 
 const ZOOM_LEVELS = [1.25, 2.0, 3.2];
@@ -1559,6 +1567,46 @@ function buildBattlefieldAKView(camo) {
   return g;
 }
 
+function buildBattlefieldRPGView(camo) {
+  const g = new THREE.Group();
+  const tube = new THREE.MeshStandardMaterial({ color: 0x343b32, roughness: 0.72, metalness: 0.35, flatShading: true });
+  const warhead = new THREE.MeshStandardMaterial({ color: 0x6a6b55, roughness: 0.78, metalness: 0.2, flatShading: true });
+  const grip = new THREE.MeshStandardMaterial({ map: camo, color: 0xb9b69f, roughness: 0.9, flatShading: true });
+  const glove = new THREE.MeshStandardMaterial({ color: 0x8c8068, roughness: 0.95, flatShading: true });
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 1.15, 7), tube);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.02, -0.38);
+  g.add(barrel);
+  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.095, 0.16, 7), tube);
+  muzzle.rotation.x = Math.PI / 2;
+  muzzle.position.set(0, 0.02, -1.02);
+  g.add(muzzle);
+  const warheadShape = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.34, 7), warhead);
+  warheadShape.rotation.x = -Math.PI / 2;
+  warheadShape.position.set(0, 0.02, -1.22);
+  g.add(warheadShape);
+  gunBox(g, 0.11, 0.13, 0.4, grip, 0, -0.12, 0.06, -0.12);
+  gunBox(g, 0.09, 0.16, 0.14, tube, 0, -0.2, 0.3, -0.22);
+  gunBox(g, 0.08, 0.18, 0.13, grip, 0, -0.15, -0.49, -0.12);
+  gunBox(g, 0.035, 0.08, 0.09, tube, 0, 0.13, -0.38);
+  gunBox(g, 0.04, 0.1, 0.08, tube, 0, 0.12, -0.82);
+  gunBox(g, 0.18, 0.16, 0.22, glove, 0.02, -0.2, 0.14);
+  gunBox(g, 0.2, 0.2, 0.45, glove, 0.04, -0.34, 0.44, 0.08);
+  const flash = addMuzzleFlash(g, new THREE.Vector3(0, 0.02, -1.34));
+  g.userData = {
+    basePos: new THREE.Vector3(0.36, -0.25, -1.1),
+    adsPos: new THREE.Vector3(0, -0.16, -0.88),
+    baseRot: new THREE.Euler(0.015, 0.17, 0.01),
+    adsRot: new THREE.Euler(),
+    flash,
+    muzzle: new THREE.Vector3(0, 0.02, -1.34)
+  };
+  g.position.copy(g.userData.basePos);
+  g.rotation.copy(g.userData.baseRot);
+  g.scale.setScalar(0.54);
+  return g;
+}
+
 function setupWeapons() {
   if (weaponGroups.length) return;
   const pistol = buildPistolView();
@@ -1571,7 +1619,8 @@ function setupWeapons() {
     buildBattlefieldPistolView(camo),
     buildBattlefieldM4View(camo),
     buildBattlefieldAKView(camo),
-    buildSniperView()
+    buildSniperView(),
+    buildBattlefieldRPGView(camo)
   );
   for (const g of weaponGroups.concat(battlefieldWeaponGroups)) {
     g.visible = false;
@@ -1993,10 +2042,11 @@ function drawCockpitCanvases(car) {
 function updateCarCockpitView(dt) {
   if (!carCockpit) return;
   const isCar = !activeVehicle || !activeVehicle.type || activeVehicle.type === 'car';
-  const show = G.mode === 'playing' && !!activeVehicle && player.cameraMode === '1p' && isCar;
+  const isTank = !!activeVehicle && activeVehicle.style === 'tank';
+  const show = G.mode === 'playing' && !!activeVehicle && player.cameraMode === '1p' && isCar && !isTank && activeSeat === 'driver';
   carCockpitRoot.visible = show;
-  /* Tactical aircraft/boat cockpit for heli, plane & boat */
-  const showDash = G.mode === 'playing' && !!activeVehicle && player.cameraMode === '1p' && !isCar;
+  /* Tactical aircraft/boat/tank cockpit for heli, plane, boat & tank driver */
+  const showDash = G.mode === 'playing' && !!activeVehicle && player.cameraMode === '1p' && (!isCar || isTank) && activeSeat === 'driver';
   vehicleDashRoot.visible = showDash;
   if (!show && !showDash) return;
   if (showDash && airCockpit) {
@@ -2077,8 +2127,15 @@ function updateWeaponView(dt) {
   const activeWeaponGroups = G.gameMode === 'bf' ? battlefieldWeaponGroups : weaponGroups;
   const inactiveWeaponGroups = G.gameMode === 'bf' ? weaponGroups : battlefieldWeaponGroups;
   const show = G.mode === 'playing' && player.cameraMode === '1p' && !!activeWeaponGroups.length && (!activeVehicle || aimingInVehicle);
-  weaponRoot.visible = show;
-  if (!show) {
+  const w = getWeaponSpec();
+  const scopedAiming = show && (player.aiming || pointer.aiming || gamepadState.aim) && weaponHasScope(w);
+  const scopeView = $('scope-view');
+  if (scopeView) {
+    scopeView.classList.toggle('hidden', !scopedAiming);
+    scopeView.setAttribute('aria-hidden', String(!scopedAiming));
+  }
+  weaponRoot.visible = show && !scopedAiming;
+  if (!show || scopedAiming) {
     state.recoilPitch *= Math.exp(-dt * 13);
     state.recoilYaw *= Math.exp(-dt * 13);
     return;
@@ -2087,7 +2144,6 @@ function updateWeaponView(dt) {
   for (let i = 0; i < activeWeaponGroups.length; i++) activeWeaponGroups[i].visible = i === state.weapon;
   const g = activeWeaponGroups[state.weapon];
   if (!g) return;
-  const w = getWeaponSpec();
   const ud = g.userData;
   const kick = clamp(state.recoilPitch / Math.max(0.001, w.recoil), 0, 2);
   const reloadProgress = state.reloading ? 1 - clamp(state.reloadTimer / w.reload, 0, 1) : 0;
@@ -2713,7 +2769,8 @@ function buildCar(color, opts = {}) {
   exhaust.position.set(0.56, 0.36, 2.18);
   group.add(exhaust);
 
-  /* Military Humvee Exclusive Hardware: Heavy Bullbar, Slant-Back, Roof Gun Ring & Spare Tire */
+  /* Military Humvee Exclusive Hardware: Heavy Bullbar, Slant-Back, Rotating Roof Gun Ring & Spare Tire */
+  let turret = null;
   if (isHumvee) {
     const bull = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.44, 0.12), black);
     bull.position.set(0, 0.82, -2.26);
@@ -2725,13 +2782,19 @@ function buildCar(color, opts = {}) {
     const turretRing = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.50, 0.16, 8), black);
     turretRing.position.set(0, 1.80, 0.25);
     group.add(turretRing);
+    turret = new THREE.Group();
+    turret.position.set(0, 1.92, 0.25);
+    const gunShield = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.44, 0.08), paint);
+    gunShield.position.set(0, 0.16, -0.34);
+    turret.add(gunShield);
     const mgBody = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, 0.65), black);
-    mgBody.position.set(0, 2.02, 0.08);
-    group.add(mgBody);
-    const mgBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.038, 0.88, 6), black);
+    mgBody.position.set(0, 0.14, -0.18);
+    turret.add(mgBody);
+    const mgBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.038, 0.92, 6), black);
     mgBarrel.rotation.x = Math.PI / 2;
-    mgBarrel.position.set(0, 2.04, -0.58);
-    group.add(mgBarrel);
+    mgBarrel.position.set(0, 0.16, -0.82);
+    turret.add(mgBarrel);
+    group.add(turret);
     const spare = new THREE.Mesh(WHEEL_GEO, WHEEL_MAT);
     spare.rotation.x = Math.PI / 2;
     spare.position.set(0, 0.98, 2.26);
@@ -2800,7 +2863,119 @@ function buildCar(color, opts = {}) {
   }
 
   group.traverse((o) => { if (o.isMesh) o.castShadow = o.castShadow !== false; });
-  return { group, body, cabin, wheels, lightbar, policeMats, paint, style };
+  return { group, body, cabin, turret, wheels, lightbar, policeMats, paint, style };
+}
+
+/* ============================================================
+   PS1 Low-Poly Main Battle Tank (M1A2 Abrams) — Heavy Armor
+   Independently Rotating 120mm Turret + Roof Commander .50 Cal
+   ============================================================ */
+function buildTank(color = 0x5c5b46) {
+  const group = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({ color, map: KC.makeCamoTexture(['#5a5944', '#464734', '#6b674d', '#383a2c']), roughness: 0.82, metalness: 0.28, flatShading: true });
+  const darkArmor = new THREE.MeshStandardMaterial({ color: 0x262926, roughness: 0.85, metalness: 0.45, flatShading: true });
+  const trackMat = new THREE.MeshStandardMaterial({ color: 0x1a1c1d, roughness: 0.95, metalness: 0.25, flatShading: true });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x3b4044, roughness: 0.55, metalness: 0.65, flatShading: true });
+
+  /* Main Heavy Composite Hull + Sloped Glacis Front */
+  const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.96, 6.2), hullMat);
+  body.position.set(0, 0.86, 0);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  const glacis = new THREE.Mesh(new THREE.BoxGeometry(3.15, 0.52, 1.55), hullMat);
+  glacis.position.set(0, 0.88, -3.28);
+  glacis.rotation.x = 0.42;
+  group.add(glacis);
+
+  const engineDeck = new THREE.Mesh(new THREE.BoxGeometry(2.75, 0.16, 1.95), darkArmor);
+  engineDeck.position.set(0, 1.38, 1.85);
+  group.add(engineDeck);
+
+  /* Armored Track Pods, Skirts & Road Wheels */
+  const wheels = [];
+  for (const sx of [-1.52, 1.52]) {
+    const track = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.82, 6.45), trackMat);
+    track.position.set(sx, 0.45, 0);
+    group.add(track);
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.58, 6.3), hullMat);
+    skirt.position.set(sx + (sx < 0 ? -0.32 : 0.32), 0.78, 0);
+    group.add(skirt);
+    for (let wz = -2.35; wz <= 2.35; wz += 0.94) {
+      const rw = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.52, 8), darkArmor);
+      rw.rotation.z = Math.PI / 2;
+      rw.position.set(sx, 0.34, wz);
+      group.add(rw);
+      wheels.push(rw);
+    }
+  }
+
+  /* Headlights on Front Hull */
+  for (const hx of [-1.18, 1.18]) {
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.1), HEADLIGHT_MAT);
+    hl.position.set(hx, 1.16, -3.15);
+    group.add(hl);
+  }
+
+  /* Independently Rotating Sloped Abrams Turret */
+  const turret = new THREE.Group();
+  turret.position.set(0, 1.36, -0.15);
+
+  const turretCore = new THREE.Mesh(new THREE.BoxGeometry(2.65, 0.78, 3.35), hullMat);
+  turretCore.position.set(0, 0.42, 0.15);
+  turretCore.castShadow = true;
+  turret.add(turretCore);
+
+  /* Sloped Composite Front Cheeks + Rear Bustle Rack */
+  const cheek = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.66, 1.15), hullMat);
+  cheek.position.set(0, 0.36, -1.55);
+  cheek.rotation.x = 0.25;
+  turret.add(cheek);
+
+  const bustle = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.44, 0.85), darkArmor);
+  bustle.position.set(0, 0.46, 2.08);
+  turret.add(bustle);
+
+  /* Elevating 120mm M256 Smoothbore Main Cannon + Bore Evacuator */
+  const barrelPivot = new THREE.Group();
+  barrelPivot.position.set(0, 0.42, -1.75);
+  const mantlet = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.44, 0.55), steelMat);
+  barrelPivot.add(mantlet);
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.115, 4.4, 8), hullMat);
+  tube.rotation.x = Math.PI / 2;
+  tube.position.set(0, 0, -2.2);
+  barrelPivot.add(tube);
+  const evac = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.68, 8), darkArmor);
+  evac.rotation.x = Math.PI / 2;
+  evac.position.set(0, 0, -1.55);
+  barrelPivot.add(evac);
+  turret.add(barrelPivot);
+
+  /* Commander Cupola & Roof-Mounted .50 Cal Gunner Pintle */
+  const cupola = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.24, 8), darkArmor);
+  cupola.position.set(0.55, 0.92, 0.35);
+  turret.add(cupola);
+  const roofGun = new THREE.Group();
+  roofGun.position.set(0.55, 1.14, 0.35);
+  const mgB = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 0.55), darkArmor);
+  mgB.position.set(0, 0.04, -0.15);
+  const mgBr = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.034, 0.78, 6), darkArmor);
+  mgBr.rotation.x = Math.PI / 2;
+  mgBr.position.set(0, 0.06, -0.72);
+  roofGun.add(mgB, mgBr);
+  turret.add(roofGun);
+
+  /* Whip Antennas */
+  for (const ax of [-0.95, 0.95]) {
+    const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 2.2, 4), darkArmor);
+    ant.position.set(ax, 1.82, 1.65);
+    turret.add(ant);
+  }
+
+  group.add(turret);
+  group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return { group, body, cabin: turret, turret, barrel: barrelPivot, roofGun, wheels, lightbar: null, policeMats: [], paint: hullMat, style: 'tank' };
 }
 
 /* ============================================================
@@ -3120,16 +3295,44 @@ function detachVehiclePart(v, force = 6.5, burning = false) {
   });
 }
 
-function damageVehicle(v, amount, hitPoint = null) {
+let lastArmorBounceNote = 0;
+
+function damageVehicle(v, amount, hitPoint = null, dmgType = 'explosive') {
   if (!v || v.wrecked) return;
   if (v.hp == null) { v.maxHp = 180; v.hp = 180; }
-  const prevRatio = v.hp / Math.max(1, v.maxHp);
-  v.hp = Math.max(0, v.hp - amount);
-  const nextRatio = v.hp / Math.max(1, v.maxHp);
-
   const px = hitPoint ? hitPoint.x : v.x;
   const py = hitPoint ? hitPoint.y : ((v.y || 0) + 0.9);
   const pz = hitPoint ? hitPoint.z : v.z;
+
+  /* Realistic Armor Immunity:
+     - Heavy Armor (Tanks, APCs) & Light Armor (Humvees, Gunships, Jets, Patrol Gunboats)
+       DEFLECT standard small-arms bullets with 0 hull damage!
+     - Only heavy caliber (.50 cal / 20mm / 30mm), explosives, or anti-tank shells penetrate! */
+  const tier = v.armorTier || 'none';
+  if (tier !== 'none' && dmgType === 'small_arms') {
+    spawnParticles(px, py, pz, 0xfff0b0, 5, 5.2, 0.22, 12);
+    addImpactFlash(new THREE.Vector3(px, py, pz), 0xffe4a0, 0.42);
+    G.sound.impact();
+    if (gameTime - lastArmorBounceNote > 2.4 && v !== activeVehicle) {
+      lastArmorBounceNote = gameTime;
+      notify('ARMOR DEFLECTED', 'REQUIRES .50 CAL / EXPLOSIVE / ANTI-TANK', '');
+    }
+    return false;
+  }
+
+  let effAmount = amount;
+  if (tier === 'heavy') {
+    if (dmgType === 'heavy_cal') effAmount *= 0.35;
+    else if (dmgType === 'antitank') effAmount *= 1.35;
+  } else if (tier === 'armored') {
+    if (dmgType === 'heavy_cal') effAmount *= 0.85;
+    else if (dmgType === 'explosive' || dmgType === 'antitank') effAmount *= 1.15;
+  }
+
+  const prevRatio = v.hp / Math.max(1, v.maxHp);
+  v.hp = Math.max(0, v.hp - effAmount);
+  const nextRatio = v.hp / Math.max(1, v.maxHp);
+
   spawnParticles(px, py, pz, 0xffd27a, 6, 4.5, 0.3, 10);
 
   /* Progressive destructible mesh break-off at damage thresholds */
@@ -3143,6 +3346,7 @@ function damageVehicle(v, amount, hitPoint = null) {
   if (nextRatio <= 0.38 && !v.onFire && v.hp > 0) {
     v.onFire = true;
     v.fireWarned = false;
+    dismountAllAllies(v);
     if (v === activeVehicle) {
       notify('CRITICAL', 'VEHICLE ON FIRE — BAIL OUT [F]!', 'danger');
     }
@@ -3151,6 +3355,7 @@ function damageVehicle(v, amount, hitPoint = null) {
   if (v.hp <= 0) {
     explodeVehicle(v);
   }
+  return true;
 }
 
 function explodeVehicle(v) {
@@ -3163,6 +3368,7 @@ function explodeVehicle(v) {
   v.wreckSmokeTimer = 22;
 
   const ex = v.x, ey = (v.y || 0) + 0.85, ez = v.z;
+  dismountAllAllies(v);
   /* Eject player if inside exploding vehicle */
   if (v === activeVehicle) {
     exitCar();
@@ -3172,7 +3378,7 @@ function explodeVehicle(v) {
   /* Massive layered PS1 explosion */
   spawnExplosion(ex, ey, ez, 2.25);
   G.sound.crash(1.0);
-  notify('DESTROYED', (v.type === 'heli' ? 'HELICOPTER' : v.type === 'plane' ? 'AIRCRAFT' : v.type === 'boat' ? 'GUNBOAT' : v.style === 'humvee' ? 'HUMVEE' : 'VEHICLE') + ' DESTROYED!', 'money');
+  notify('DESTROYED', (v.type === 'heli' ? 'HELICOPTER' : v.type === 'plane' ? 'AIRCRAFT' : v.type === 'boat' ? 'GUNBOAT' : v.style === 'tank' ? 'MAIN BATTLE TANK' : v.style === 'humvee' ? 'HUMVEE' : 'VEHICLE') + ' DESTROYED!', 'money');
 
   /* Break apart: launch 7-10 burning vehicle parts tumbling through the air! */
   const burstParts = Math.min(10, Math.max(5, Math.floor((v.detachableParts?.length || 0) * 0.65)));
@@ -3214,7 +3420,7 @@ function explodeVehicle(v) {
     if (ov === v || ov.wrecked) continue;
     const vd = dist2(ex, ez, ov.x, ov.z);
     if (vd < 14) {
-      damageVehicle(ov, 150 * (1 - vd / 14));
+      damageVehicle(ov, 150 * (1 - vd / 14), null, 'explosive');
     }
   }
   suppressNearbyHostiles(ex, ez, ex, ez, 24);
@@ -3260,16 +3466,22 @@ function updateVehicleDestruction(dt) {
 }
 
 function makeCarObject(spot) {
-  const model = buildCar(spot.color, { police: spot.kind === 'police', style: spot.style });
-  const maxHp = spot.style === 'humvee' || spot.style === 'armored' ? 280 : spot.kind === 'police' ? 210 : 160;
+  const isTank = spot.style === 'tank';
+  const isHumvee = spot.style === 'humvee';
+  const isArmored = spot.style === 'armored';
+  const model = isTank ? buildTank(spot.color) : buildCar(spot.color, { police: spot.kind === 'police', style: spot.style });
+  const maxHp = isTank ? 650 : isArmored ? 420 : isHumvee ? 300 : spot.kind === 'police' ? 210 : 160;
+  const armorTier = (isTank || isArmored) ? 'heavy' : isHumvee ? 'armored' : 'none';
   const car = {
+    vehId: 'car_' + cars.length,
     model,
     group: model.group,
     x: spot.x,
     z: spot.z,
     heading: spot.heading,
+    turretYaw: 0,
     speed: 0,
-    maxSpeed: spot.kind === 'police' ? 31 : rand(24, 30),
+    maxSpeed: isTank ? 17.5 : spot.kind === 'police' ? 31 : isHumvee ? 26 : rand(24, 30),
     kind: spot.kind || 'parked',
     style: model.style,
     controlled: false,
@@ -3277,10 +3489,20 @@ function makeCarObject(spot) {
     color: spot.color,
     trafficSpeed: spot.speed || 0,
     lightPhase: rand(0, 10),
-    halfW: 0.98,
-    halfL: 2.12,
+    halfW: isTank ? 1.78 : 0.98,
+    halfL: isTank ? 3.35 : 2.12,
     hp: maxHp,
     maxHp,
+    armorTier,
+    team: PLAYER_TEAM,
+    hasDriverTurret: isTank,
+    hasGunnerSeat: isHumvee || isTank,
+    maxPassengers: isTank ? 1 : 2,
+    driver: null,
+    gunner: null,
+    passengers: [],
+    seatOffsetGunner: isTank ? [0.55, 2.05, 0.20] : [0, 1.48, 0.25],
+    seatOffsetPassenger: [0.58, 0.55, 0.45],
     onFire: false,
     wrecked: false
   };
@@ -3295,13 +3517,22 @@ function makeCarObject(spot) {
 function makeHeliObject(spot) {
   const model = buildHelicopter(spot.color || 0x1a3a5c);
   const v = {
+    vehId: 'heli_' + helis.length,
     type: 'heli', model, group: model.group,
     x: spot.x, z: spot.z, y: spot.y || 0.5,
     heading: spot.heading || 0, pitch: 0, roll: 0,
     speed: 0, verticalSpeed: 0, maxSpeed: 32,
     kind: spot.kind || 'parked', controlled: false,
     color: spot.color || 0x1a3a5c, halfW: 1.2, halfL: 2.4,
-    rotorPhase: 0, hp: 280, maxHp: 280, onFire: false, wrecked: false
+    rotorPhase: 0, hp: 320, maxHp: 320, armorTier: 'armored',
+    team: PLAYER_TEAM,
+    hasDriverTurret: true,
+    hasGunnerSeat: true,
+    maxPassengers: 2,
+    driver: null, gunner: null, passengers: [],
+    seatOffsetGunner: [0.95, 0.72, 0.25],
+    seatOffsetPassenger: [-0.95, 0.72, 0.25],
+    onFire: false, wrecked: false
   };
   v.group.position.set(v.x, v.y, v.z);
   v.group.rotation.y = v.heading;
@@ -3313,13 +3544,22 @@ function makeHeliObject(spot) {
 function makePlaneObject(spot) {
   const model = buildPlane(spot.color || 0xd8d0c0);
   const v = {
+    vehId: 'plane_' + planes.length,
     type: 'plane', model, group: model.group,
     x: spot.x, z: spot.z, y: spot.y || 2,
     heading: spot.heading || 0, pitch: 0, roll: 0,
     speed: 0, maxSpeed: 64,
     kind: spot.kind || 'parked', controlled: false,
     color: spot.color || 0xd8d0c0, halfW: 1.2, halfL: 3.4,
-    propPhase: 0, hp: 220, maxHp: 220, onFire: false, wrecked: false
+    propPhase: 0, hp: 260, maxHp: 260, armorTier: 'armored',
+    team: PLAYER_TEAM,
+    hasDriverTurret: true,
+    hasGunnerSeat: false,
+    maxPassengers: 1,
+    driver: null, gunner: null, passengers: [],
+    seatOffsetGunner: [0, 1.15, 0.6],
+    seatOffsetPassenger: [0, 1.15, 0.95],
+    onFire: false, wrecked: false
   };
   v.group.position.set(v.x, v.y, v.z);
   v.group.rotation.y = v.heading;
@@ -3332,6 +3572,7 @@ function makeBoatObject(spot) {
   const isSpeed = spot.boatKind === 'speedboat';
   const model = isSpeed ? buildSpeedboat(spot.color || 0xd94638) : buildBoat(spot.color || 0x3a4a58);
   const v = {
+    vehId: 'boat_' + boats.length,
     type: 'boat', boatKind: isSpeed ? 'speedboat' : 'gunboat',
     model, group: model.group,
     x: spot.x, z: spot.z, y: -0.18,
@@ -3339,7 +3580,16 @@ function makeBoatObject(spot) {
     speed: 0, maxSpeed: isSpeed ? 27 : 19,
     kind: spot.kind || 'parked', controlled: false,
     color: spot.color || 0x3a4a58, halfW: isSpeed ? 1.25 : 1.45, halfL: isSpeed ? 3.0 : 3.5,
-    hp: isSpeed ? 145 : 210, maxHp: isSpeed ? 145 : 210, onFire: false, wrecked: false
+    hp: isSpeed ? 150 : 260, maxHp: isSpeed ? 150 : 260,
+    armorTier: isSpeed ? 'none' : 'armored',
+    team: PLAYER_TEAM,
+    hasDriverTurret: false,
+    hasGunnerSeat: true,
+    maxPassengers: 2,
+    driver: null, gunner: null, passengers: [],
+    seatOffsetGunner: isSpeed ? [0, 0.72, -1.65] : [0, 1.05, -2.35],
+    seatOffsetPassenger: [0.55, 0.65, 1.2],
+    onFire: false, wrecked: false
   };
   v.group.position.set(v.x, v.y, v.z);
   v.group.rotation.y = v.heading;
@@ -4294,11 +4544,33 @@ function updateAllies(dt) {
   for (let i = allies.length - 1; i >= 0; i--) {
     const a = allies[i];
     if (!a.alive) {
+      if (a.mountedVehicle) dismountAllyFromVehicle(a);
       scene.remove(a.group);
       allies.splice(i, 1);
       continue;
     }
+    if (a.mountedVehicle) continue; /* Mounted gunners & passengers are driven by updateVehicleCrew(dt) */
     const pos = a.group.position;
+    /* Auto-board player's vehicle if an open Gunner or Passenger seat is nearby (< 22m)! */
+    if (activeVehicle && !activeVehicle.wrecked && activeSeat === 'driver') {
+      const av = activeVehicle;
+      const openSeat = (av.hasGunnerSeat && !av.gunner) || ((av.passengers?.length || 0) < (av.maxPassengers || 0));
+      if (openSeat && Math.abs(av.speed || 0) < 9.5) {
+        const vd = dist2(pos.x, pos.z, av.x, av.z);
+        if (vd < 3.6) {
+          if (mountAllyToVehicle(a, av)) continue;
+        } else if (vd < 22) {
+          const dx = (av.x - pos.x) / vd, dz = (av.z - pos.z) / vd;
+          a.heading = Math.atan2(-dx, -dz);
+          a.group.rotation.y = a.heading;
+          pos.x += dx * a.speed * 1.25 * dt;
+          pos.z += dz * a.speed * 1.25 * dt;
+          a.walkPhase = (a.walkPhase || 0) + dt * 6;
+          animatePerson(a.model, a.walkPhase, 1.15, dt, { aiming: false, crouching: false });
+          continue;
+        }
+      }
+    }
     if (a.bleeding > 0) {
       a.hp -= a.bleeding * dt;
       if (Math.random() < dt * 2.5) spawnParticles(pos.x, 0.9, pos.z, 0x991018, 2, 1.2, 0.35, 10);
@@ -4833,8 +5105,8 @@ function hostileShoot(actor, dist) {
       }
     } else if (G.mode === 'playing') {
       if (activeVehicle && !activeVehicle.wrecked) {
-        damageVehicle(activeVehicle, actor.damage * 1.15, to);
-        applyPlayerDamage(actor.damage * 0.22);
+        const penetrated = damageVehicle(activeVehicle, actor.damage * 1.15, to, 'small_arms');
+        if (penetrated) applyPlayerDamage(actor.damage * 0.22);
       } else {
         applyPlayerDamage(actor.damage);
       }
@@ -4855,6 +5127,110 @@ function getShootTargets() {
   return city.rayMeshes.concat(carHitMeshes, charTargets);
 }
 
+const activePlayerRockets = [];
+const playerRocketRaycaster = new THREE.Raycaster();
+const playerRocketBodyGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.72, 6);
+const playerRocketNoseGeo = new THREE.ConeGeometry(0.065, 0.22, 6);
+const playerRocketFinGeo = new THREE.BoxGeometry(0.2, 0.045, 0.12);
+const playerRocketBodyMat = new THREE.MeshStandardMaterial({ color: 0x4d5543, roughness: 0.72, metalness: 0.22, flatShading: true });
+const playerRocketNoseMat = new THREE.MeshStandardMaterial({ color: 0x777663, roughness: 0.65, metalness: 0.32, flatShading: true });
+
+function createPlayerRocketMesh() {
+  const rocket = new THREE.Group();
+  const body = new THREE.Mesh(playerRocketBodyGeo, playerRocketBodyMat);
+  const nose = new THREE.Mesh(playerRocketNoseGeo, playerRocketNoseMat);
+  nose.position.y = 0.45;
+  rocket.add(body, nose);
+  for (let i = 0; i < 4; i++) {
+    const fin = new THREE.Mesh(playerRocketFinGeo, playerRocketBodyMat);
+    fin.position.y = -0.3;
+    fin.rotation.y = i * Math.PI / 2;
+    rocket.add(fin);
+  }
+  return rocket;
+}
+
+function launchPlayerRocket(w) {
+  const direction = camera.getWorldDirection(new THREE.Vector3()).normalize();
+  const start = camera.position.clone().addScaledVector(direction, 0.85);
+  const mesh = createPlayerRocketMesh();
+  mesh.position.copy(start);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+  scene.add(mesh);
+  activePlayerRockets.push({
+    mesh,
+    velocity: direction.multiplyScalar(58).add(player.vel.clone().multiplyScalar(0.25)),
+    life: w.range / 58,
+    damage: w.damage,
+    blastRadius: w.blastRadius
+  });
+  state.ammo[state.weapon]--;
+  state.fireTimer = w.rate;
+  state.muzzleTimer = 0.08;
+  state.recoilPitch += w.recoil;
+  player.recoilPitch += w.recoil * 0.82;
+  player.shake = Math.max(player.shake, 0.22);
+  G.sound.shoot(w.sound);
+  triggerGamepadRumble(0.7, 120);
+  updateHUD();
+}
+
+function detonatePlayerRocket(rocket, point) {
+  spawnExplosion(point.x, point.y, point.z, 1.45);
+  G.sound.crash(0.9);
+  const origin = new THREE.Vector3(point.x, Math.max(0.35, point.y), point.z);
+  const radius = rocket.blastRadius;
+  for (const list of [thugs, cops, allies]) {
+    for (const actor of list) {
+      if (!actor.alive) continue;
+      const pos = actor.group.position;
+      const distance = dist2(point.x, point.z, pos.x, pos.z);
+      if (distance >= radius) continue;
+      if (distance > 2.8 && !hasLineOfSight(origin, new THREE.Vector3(pos.x, 1.2, pos.z))) continue;
+      const damage = rocket.damage * Math.pow(1 - distance / radius, 1.2);
+      damageActor(actor, damage, new THREE.Vector3(pos.x, 1.2, pos.z), false, 'torso');
+    }
+  }
+  const playerDistance = dist2(point.x, point.z, player.pos.x, player.pos.z);
+  if (playerDistance < radius && (playerDistance < 2.8 || hasLineOfSight(origin, new THREE.Vector3(player.pos.x, 1.2, player.pos.z)))) {
+    applyPlayerDamage(rocket.damage * 0.42 * Math.pow(1 - playerDistance / radius, 1.2));
+  }
+  for (const vehicle of cars.concat(helis, planes, boats)) {
+    if (vehicle.wrecked) continue;
+    const distance = dist2(point.x, point.z, vehicle.x, vehicle.z);
+    if (distance >= radius + 2.5) continue;
+    const damage = rocket.damage * 1.55 * Math.max(0.12, 1 - distance / (radius + 2.5));
+    if (!vehicle.wrecked) showHitmarker(vehicle.hp <= damage);
+    damageVehicle(vehicle, damage, new THREE.Vector3(vehicle.x, (vehicle.y || 0) + 0.8, vehicle.z), 'antitank');
+  }
+  suppressNearbyHostiles(point.x, point.z, player.pos.x, player.pos.z, radius * 2.3);
+}
+
+function updatePlayerRockets(dt) {
+  for (let i = activePlayerRockets.length - 1; i >= 0; i--) {
+    const rocket = activePlayerRockets[i];
+    rocket.life -= dt;
+    rocket.velocity.y -= 2.8 * dt;
+    const start = rocket.mesh.position.clone();
+    const end = start.clone().addScaledVector(rocket.velocity, dt);
+    const segment = end.clone().sub(start);
+    const segmentLength = segment.length();
+    playerRocketRaycaster.set(start, segment.normalize());
+    playerRocketRaycaster.far = segmentLength;
+    const hits = playerRocketRaycaster.intersectObjects(getShootTargets(), false);
+    let impact = hits.length ? hits[0].point : null;
+    if (!impact && end.y <= 0.12) impact = new THREE.Vector3(end.x, 0.12, end.z);
+    if (impact || rocket.life <= 0) {
+      detonatePlayerRocket(rocket, impact || end);
+      scene.remove(rocket.mesh);
+      activePlayerRockets.splice(i, 1);
+      continue;
+    }
+    rocket.mesh.position.copy(end);
+    rocket.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), rocket.velocity.clone().normalize());
+  }
+}
+
 function tryShoot() {
   if (G.mode !== 'playing') return;
   const canShootInVehicle = !!activeVehicle && !hasNativeWeapons(activeVehicle);
@@ -4864,6 +5240,10 @@ function tryShoot() {
   if (state.fireTimer > 0) return;
   if (state.ammo[state.weapon] <= 0) {
     startReload();
+    return;
+  }
+  if (w.kind === 'rocket') {
+    launchPlayerRocket(w);
     return;
   }
   state.ammo[state.weapon]--;
@@ -4939,8 +5319,8 @@ function tryShoot() {
         addImpactFlash(h.point, 0xffb13b, 0.55);
         G.sound.impact();
         const vehDmg = (w.damage / pellets) * (pellets > 1 ? 0.65 : 0.72);
-        if (!hitCar.wrecked) showHitmarker(hitCar.hp <= vehDmg);
-        damageVehicle(hitCar, vehDmg, h.point);
+        const penetrated = damageVehicle(hitCar, vehDmg, h.point, 'small_arms');
+        if (penetrated && !hitCar.wrecked) showHitmarker(hitCar.hp <= vehDmg);
         if (hitCar.isEventCar && randomEvent.active) {
           hitCar.eventHp = (hitCar.eventHp || 80) - w.damage;
           showHitmarker(hitCar.eventHp <= 0);
@@ -5100,7 +5480,7 @@ function updateGrenades(dt) {
         if (v.wrecked) continue;
         const vd = dist2(p.x, p.z, v.x, v.z);
         if (vd < 13.5) {
-          damageVehicle(v, 225 * (1 - vd / 13.5), new THREE.Vector3(v.x, (v.y || 0) + 0.8, v.z));
+          damageVehicle(v, 225 * (1 - vd / 13.5), new THREE.Vector3(v.x, (v.y || 0) + 0.8, v.z), 'explosive');
         }
       }
       suppressNearbyHostiles(p.x, p.z, p.x, p.z, 22);
@@ -5620,7 +6000,8 @@ function startReload() {
 }
 
 function switchWeapon(index) {
-  if (activeVehicle || index === state.weapon || index < 0 || index > 3) return;
+  const weaponCount = (G.gameMode === 'bf' ? BF_WEAPONS : WEAPONS).length;
+  if (activeVehicle || index === state.weapon || index < 0 || index >= weaponCount) return;
   state.weapon = index;
   state.reloading = false;
   state.fireTimer = 0.18;
@@ -5737,12 +6118,37 @@ function enterCar(car) {
     car.isEventCar = false;
     completeRandomEvent('VEHICLE HIJACKED');
   }
+  /* Multi-seat team boarding: if a same-team teammate or ally is already driving/piloting,
+     board as Gunner (if open) or Passenger! Reject boarding enemy-occupied vehicles. */
+  const hasOtherDriver = !!car.driver && car.driver !== 'player';
+  if (hasOtherDriver) {
+    const driverTeam = (typeof car.driver === 'object' && car.driver.team) ? car.driver.team : (car.team || PLAYER_TEAM);
+    if (driverTeam !== PLAYER_TEAM) {
+      notify('VEHICLE', 'ENEMY OCCUPIED VEHICLE', 'danger');
+      return;
+    }
+    if (car.hasGunnerSeat && !car.gunner) {
+      activeSeat = 'gunner';
+      car.gunner = 'player';
+    } else if ((car.passengers?.length || 0) < (car.maxPassengers || 0)) {
+      activeSeat = 'passenger';
+      car.passengers.push('player');
+    } else {
+      notify('VEHICLE', 'VEHICLE CREW FULL', 'danger');
+      return;
+    }
+  } else {
+    activeSeat = 'driver';
+    car.driver = 'player';
+    car.team = PLAYER_TEAM;
+    car.controlled = true;
+    car.speed = 0;
+  }
+
   activeVehicle = car;
-  car.controlled = true;
   ensureVehicleWeapons(car);
-  car.group.visible = player.cameraMode === '3p';
+  car.group.visible = player.cameraMode === '3p' || activeSeat !== 'driver';
   if (playerRig) playerRig.group.visible = false;
-  car.speed = 0;
   state.firing = false;
   pointer.firing = false;
   pointer.aiming = false;
@@ -5753,18 +6159,19 @@ function enterCar(car) {
   player.carLookPitch = 0;
   if (car.type === 'heli' || car.type === 'plane' || car.type === 'boat') {
     carCockpitRoot.visible = false;
-    vehicleDashRoot.visible = player.cameraMode === '1p';
+    vehicleDashRoot.visible = player.cameraMode === '1p' && activeSeat === 'driver';
     G.sound.enterCar();
-    G.sound.startEngine();
+    if (activeSeat === 'driver') G.sound.startEngine();
     carLight.intensity = 0;
     updateCarCockpitView(0);
     updateHUD();
     updateVehicleReticle();
-    notify('VEHICLE', car.type === 'heli' ? 'AH-64 GUNSHIP · [1/2] WEAPONS · [LMB] FIRE · [F] EXIT' : car.type === 'plane' ? 'F-26 SKYHAWK · [1/2] WEAPONS · [LMB] FIRE · [F] EXIT' : 'PATROL GUNBOAT · [1/2] WEAPONS · [LMB] FIRE · [F] EXIT', '');
+    const seatTag = activeSeat === 'gunner' ? 'GUNNER SEAT' : activeSeat === 'passenger' ? 'PASSENGER SEAT' : (car.type === 'heli' ? 'AH-64 GUNSHIP' : car.type === 'plane' ? 'F-26 SKYHAWK' : (car.boatKind === 'speedboat' ? 'ASSAULT RHIB' : 'PATROL GUNBOAT'));
+    notify('VEHICLE', seatTag + ' · [Z] CREW · [F] EXIT', '');
     return;
   }
   G.sound.enterCar();
-  G.sound.startEngine();
+  if (activeSeat === 'driver') G.sound.startEngine();
   carLight.intensity = 85;
   carLight.distance = 68;
   syncCockpitDriverColors();
@@ -5772,23 +6179,34 @@ function enterCar(car) {
   updateCarCockpitView(0);
   updateHUD();
   updateVehicleReticle();
-  notify('VEHICLE', car.isPolice ? 'POLICE CRUISER · [F] EXIT' : car.style === 'humvee' ? 'TACTICAL HUMVEE · [1/2] WEAPONS · [LMB] FIRE · [F] EXIT' : 'VEHICLE ACQUIRED · [F] EXIT', '');
+  const seatLbl = activeSeat === 'gunner' ? 'MOUNTED GUNNER SEAT' : activeSeat === 'passenger' ? 'PASSENGER SEAT' : (car.style === 'tank' ? 'M1A2 ABRAMS MBT' : car.style === 'humvee' ? 'TACTICAL HUMVEE' : car.isPolice ? 'POLICE CRUISER' : 'VEHICLE ACQUIRED');
+  notify('VEHICLE', seatLbl + ' · [Z] ALLY CREW · [C] SEAT · [F] EXIT', '');
 }
 
 function exitCar() {
   if (!activeVehicle) return;
   const car = activeVehicle;
-  car.controlled = false;
+  if (activeSeat === 'driver') {
+    car.controlled = false;
+    if (car.driver === 'player') car.driver = null;
+    car.speed = 0;
+    dismountAllAllies(car);
+  } else if (activeSeat === 'gunner') {
+    if (car.gunner === 'player') car.gunner = null;
+  } else if (activeSeat === 'passenger') {
+    const pIdx = car.passengers.indexOf('player');
+    if (pIdx >= 0) car.passengers.splice(pIdx, 1);
+  }
+  activeSeat = 'driver';
   car.group.visible = true;
-  car.speed = 0;
   carCockpitRoot.visible = false;
   vehicleDashRoot.visible = false;
   const heading = car.heading;
   const side = new THREE.Vector3(Math.cos(heading), 0, -Math.sin(heading));
   const candidates = [
-    { x: car.x + side.x * 2.35, z: car.z + side.z * 2.35 },
-    { x: car.x - side.x * 2.35, z: car.z - side.z * 2.35 },
-    { x: car.x + Math.sin(heading) * 3.4, z: car.z + Math.cos(heading) * 3.4 }
+    { x: car.x + side.x * 2.6, z: car.z + side.z * 2.6 },
+    { x: car.x - side.x * 2.6, z: car.z - side.z * 2.6 },
+    { x: car.x + Math.sin(heading) * 3.8, z: car.z + Math.cos(heading) * 3.8 }
   ];
   let chosen = candidates[0];
   for (const c of candidates) {
@@ -5815,6 +6233,231 @@ function exitCar() {
 }
 
 /* ============================================================
+   Multi-Seat Crew System (Allied NPC Gunners, Passengers & Co-Op)
+   ============================================================ */
+function mountAllyToVehicle(ally, v) {
+  if (!ally || !ally.alive || ally.mountedVehicle || !v || v.wrecked) return false;
+  if (v.hasGunnerSeat && !v.gunner) {
+    v.gunner = ally;
+    ally.mountedVehicle = v;
+    ally.mountedSeat = 'gunner';
+    ally.gunnerCooldown = 0.25;
+    notify('CREW', 'ALLY MOUNTED VEHICLE GUNNER SEAT', 'money');
+    updateHUD();
+    updateVehicleReticle();
+    return true;
+  }
+  if ((v.passengers?.length || 0) < (v.maxPassengers || 0)) {
+    v.passengers.push(ally);
+    ally.mountedVehicle = v;
+    ally.mountedSeat = 'passenger';
+    notify('CREW', 'ALLY BOARDED AS PASSENGER', '');
+    updateHUD();
+    return true;
+  }
+  return false;
+}
+
+function dismountAllyFromVehicle(ally) {
+  if (!ally || !ally.mountedVehicle) return;
+  const v = ally.mountedVehicle;
+  if (v.gunner === ally) v.gunner = null;
+  const idx = v.passengers ? v.passengers.indexOf(ally) : -1;
+  if (idx >= 0) v.passengers.splice(idx, 1);
+  ally.mountedVehicle = null;
+  ally.mountedSeat = null;
+  const sideX = Math.cos(v.heading || 0), sideZ = -Math.sin(v.heading || 0);
+  const off = (Math.random() < 0.5 ? 1 : -1) * ((v.halfW || 1.2) + 1.5);
+  ally.group.position.set(v.x + sideX * off, 0.14, v.z + sideZ * off);
+  ally.group.visible = true;
+  if (v === activeVehicle) {
+    updateHUD();
+    updateVehicleReticle();
+  }
+}
+
+function dismountAllAllies(v) {
+  if (!v) return;
+  if (v.gunner && v.gunner.type === 'ally') dismountAllyFromVehicle(v.gunner);
+  if (v.passengers && v.passengers.length) {
+    for (let i = v.passengers.length - 1; i >= 0; i--) {
+      const p = v.passengers[i];
+      if (p && p.type === 'ally') dismountAllyFromVehicle(p);
+    }
+  }
+}
+
+function callAllyCrewToVehicle(v) {
+  if (!v || v.wrecked) return;
+  const hasAllyCrew = (v.gunner && v.gunner.type === 'ally') || (v.passengers && v.passengers.some((p) => p && p.type === 'ally'));
+  /* If vehicle already has an ally gunner (or full crew), pressing [Z] dismounts crew; otherwise mounts closest free ally! */
+  const needsGunner = v.hasGunnerSeat && !v.gunner;
+  const needsPass = (v.passengers?.length || 0) < (v.maxPassengers || 0);
+  if (needsGunner || needsPass) {
+    let best = null, bestD = 85;
+    for (const a of allies) {
+      if (!a.alive || a.mountedVehicle) continue;
+      const d = dist2(v.x, v.z, a.group.position.x, a.group.position.z);
+      if (d < bestD) { bestD = d; best = a; }
+    }
+    if (best) {
+      mountAllyToVehicle(best, v);
+      return;
+    }
+    /* In RP mode or if all allies are far/dead, spawn a fresh squad gunner if BF mode has tickets! */
+    if (G.gameMode === 'bf' && allies.length < 10) {
+      const a = makeAlly(v.x + 2, v.z + 2);
+      mountAllyToVehicle(a, v);
+      return;
+    }
+  }
+  if (hasAllyCrew) {
+    dismountAllAllies(v);
+    notify('CREW', 'ALLY CREW DISMOUNTED', '');
+  }
+}
+
+function switchPlayerSeat() {
+  if (!activeVehicle || activeVehicle.wrecked) return;
+  const v = activeVehicle;
+  if (activeSeat === 'driver' && v.hasGunnerSeat && !v.gunner) {
+    v.driver = null;
+    v.controlled = false;
+    v.speed = 0;
+    v.gunner = 'player';
+    activeSeat = 'gunner';
+    carCockpitRoot.visible = false;
+    vehicleDashRoot.visible = false;
+    v.group.visible = true;
+    notify('SEAT', 'SWITCHED TO MOUNTED GUNNER SEAT', '');
+  } else if (activeSeat === 'gunner' && !v.driver) {
+    v.gunner = null;
+    v.driver = 'player';
+    v.controlled = true;
+    activeSeat = 'driver';
+    v.group.visible = player.cameraMode === '3p';
+    notify('SEAT', 'SWITCHED TO DRIVER SEAT', '');
+  } else {
+    return;
+  }
+  updateHUD();
+  updateVehicleReticle();
+}
+
+function updateVehicleCrew(dt) {
+  const allV = cars.concat(helis, planes, boats);
+  /* Sync multiplayer teammate occupancy on vehicles (same-team peers can share cars, tanks, helis, jets & boats!) */
+  if (KC.multiplayer && KC.multiplayer.peers) {
+    for (const v of allV) {
+      if (v.driver && typeof v.driver === 'object' && v.driver.isPeer) v.driver = null;
+      if (v.gunner && typeof v.gunner === 'object' && v.gunner.isPeer) v.gunner = null;
+      if (v.passengers) {
+        for (let i = v.passengers.length - 1; i >= 0; i--) {
+          if (v.passengers[i] && typeof v.passengers[i] === 'object' && v.passengers[i].isPeer) v.passengers.splice(i, 1);
+        }
+      }
+    }
+    for (const [peerId, peer] of KC.multiplayer.peers.entries()) {
+      if (!peer.inCar || !peer.vehId) continue;
+      const v = allV.find((x) => x.vehId === peer.vehId);
+      if (!v) continue;
+      const crewObj = { isPeer: true, peerId, name: peer.char?.callsign || 'TEAMMATE', team: peer.team || PLAYER_TEAM };
+      if (peer.seat === 'driver' && !v.driver) {
+        v.driver = crewObj;
+        v.team = crewObj.team;
+        /* Follow peer-driven vehicle position smoothly when we're riding as gunner/passenger */
+        if (v === activeVehicle && activeSeat !== 'driver') {
+          v.x = lerp(v.x, peer.x, Math.min(1, dt * 12));
+          v.z = lerp(v.z, peer.z, Math.min(1, dt * 12));
+          if (v.type === 'heli' || v.type === 'plane' || v.type === 'boat') v.y = lerp(v.y, peer.y || v.y, Math.min(1, dt * 12));
+          v.heading = peer.yaw || v.heading;
+          v.group.position.set(v.x, v.y != null ? v.y : 0.03, v.z);
+          v.group.rotation.y = v.heading;
+          player.pos.set(v.x, (v.y || 0) + 1.0, v.z);
+        }
+      } else if (peer.seat === 'gunner' && !v.gunner) {
+        v.gunner = crewObj;
+      } else if (peer.seat === 'passenger') {
+        v.passengers.push(crewObj);
+      }
+    }
+  }
+
+  /* Update mounted AI ally gunners & passengers */
+  for (const v of allV) {
+    if (v.wrecked) continue;
+    const cos = Math.cos(v.heading || 0), sin = Math.sin(v.heading || 0);
+    const toWorld = (off) => new THREE.Vector3(
+      v.x + off[0] * cos + off[2] * sin,
+      (v.y != null ? v.y : 0.03) + off[1],
+      v.z - off[0] * sin + off[2] * cos
+    );
+
+    if (v.gunner && v.gunner.type === 'ally') {
+      const a = v.gunner;
+      if (!a.alive) {
+        v.gunner = null;
+        if (v === activeVehicle) { updateHUD(); updateVehicleReticle(); }
+      } else {
+        const gp = toWorld(v.seatOffsetGunner || [0, 1.48, 0.25]);
+        a.group.position.copy(gp);
+        a.group.visible = !(v === activeVehicle && player.cameraMode === '1p' && activeSeat === 'driver' && v.type !== 'heli');
+        /* Ally Mounted Gunner AI: target nearest enemy soldier within 85m & fire .50 cal bursts! */
+        a.gunnerCooldown = Math.max(0, (a.gunnerCooldown || 0) - dt);
+        let bestEnemy = null, bestD = 85;
+        for (const t of thugs) {
+          if (!t.alive) continue;
+          const d = dist2(gp.x, gp.z, t.group.position.x, t.group.position.z);
+          if (d < bestD) { bestD = d; bestEnemy = t; }
+        }
+        if (bestEnemy) {
+          const tp = bestEnemy.group.position;
+          const aimYaw = Math.atan2(-(tp.x - gp.x), -(tp.z - gp.z));
+          a.heading = aimYaw;
+          a.group.rotation.y = aimYaw;
+          if (v.style === 'humvee' && v.model && v.model.turret) {
+            v.model.turret.rotation.y = aimYaw - (v.heading || 0);
+          }
+          if (v.style === 'tank' && v.model && v.model.roofGun) {
+            v.model.roofGun.rotation.y = aimYaw - (v.heading || 0) - (v.turretYaw || 0);
+          }
+          const from = new THREE.Vector3(gp.x, gp.y + 0.55, gp.z);
+          const to = new THREE.Vector3(tp.x, 1.25, tp.z);
+          if (a.gunnerCooldown <= 0 && hasLineOfSight(from, to)) {
+            a.gunnerCooldown = 0.16;
+            const hit = Math.random() < clamp(0.72 - bestD * 0.005, 0.25, 0.72);
+            const end = to.clone();
+            if (!hit) { end.x += rand(-1.2, 1.2); end.y += rand(-0.4, 0.8); end.z += rand(-1.2, 1.2); }
+            addTracer(from, end, 0xffd07a, 0.9);
+            addImpactFlash(from, 0xffd27a, 0.5);
+            G.sound.shoot('rifle');
+            if (hit) damageActor(bestEnemy, 62, end, false, 'torso');
+          }
+        } else {
+          a.group.rotation.y = v.heading || 0;
+          if (v.style === 'humvee' && v.model && v.model.turret) {
+            v.model.turret.rotation.y = lerp(v.model.turret.rotation.y, 0, 1 - Math.exp(-dt * 5));
+          }
+        }
+        animatePerson(a.model, 0, 0, dt, { aiming: !!bestEnemy, crouching: false });
+      }
+    }
+
+    if (v.passengers && v.passengers.length) {
+      for (let pi = v.passengers.length - 1; pi >= 0; pi--) {
+        const p = v.passengers[pi];
+        if (!p || p.type !== 'ally') continue;
+        if (!p.alive) { v.passengers.splice(pi, 1); continue; }
+        const pp = toWorld(v.seatOffsetPassenger || [0.58, 0.55, 0.45]);
+        p.group.position.copy(pp);
+        p.group.rotation.y = v.heading || 0;
+        p.group.visible = v.type === 'boat' || v.type === 'heli';
+      }
+    }
+  }
+}
+
+/* ============================================================
    Extended Vehicle Physics: Helicopter, Plane, Boat
    ============================================================ */
 /* ============================================================
@@ -5824,26 +6467,31 @@ function exitCar() {
 const activeRockets = [];
 
 const VEHICLE_WEAPONS = {
+  tank: [
+    { id: '120mm', name: '120MM M256 APFSDS/HE', short: '1·120MM', kind: 'cannon', dmgType: 'antitank', reticle: 'missile', cooldown: 2.2, ammoMax: 12, reloadTime: 4.5, dmg: 340, vehDmg: 420, splash: 13.0, spread: 0.003, explosiveImpact: true },
+    { id: 'coax50', name: 'COAXIAL .50 CAL MG', short: '2·.50CAL', kind: 'cannon', dmgType: 'heavy_cal', reticle: 'gun', cooldown: 0.11, ammoMax: 90, reloadTime: 3.0, dmg: 85, vehDmg: 36, splash: 0, spread: 0.012 }
+  ],
   heli: [
-    { id: '30mm', name: '30MM M230 CHAIN GUN', short: '1·30MM', kind: 'cannon', reticle: 'gun', cooldown: 0.11, ammoMax: 60, reloadTime: 2.8, dmg: 95, vehDmg: 42, splash: 4.5, spread: 0.012 },
-    { id: 'hydra', name: 'HYDRA 70 ROCKETS', short: '2·HYDRA', kind: 'rocket', reticle: 'missile', cooldown: 0.42, ammoMax: 8, reloadTime: 4.4, blastR: 16.5, dmg: 220, vehDmg: 320, speedBonus: 48 }
+    { id: '30mm', name: '30MM M230 CHAIN GUN', short: '1·30MM', kind: 'cannon', dmgType: 'heavy_cal', reticle: 'gun', cooldown: 0.11, ammoMax: 60, reloadTime: 2.8, dmg: 95, vehDmg: 42, splash: 4.5, spread: 0.012 },
+    { id: 'hydra', name: 'HYDRA 70 ROCKETS', short: '2·HYDRA', kind: 'rocket', dmgType: 'explosive', reticle: 'missile', cooldown: 0.42, ammoMax: 8, reloadTime: 4.4, blastR: 16.5, dmg: 220, vehDmg: 320, speedBonus: 48 }
   ],
   plane: [
-    { id: '20mm', name: '20MM M61 VULCAN', short: '1·20MM', kind: 'cannon', reticle: 'gun', cooldown: 0.075, ammoMax: 120, reloadTime: 3.0, dmg: 85, vehDmg: 38, splash: 3.6, spread: 0.011 },
-    { id: 'agm', name: 'AGM-65 MISSILES', short: '2·AGM', kind: 'rocket', reticle: 'missile', cooldown: 0.95, ammoMax: 4, reloadTime: 5.4, blastR: 19.0, dmg: 260, vehDmg: 380, speedBonus: 62 }
+    { id: '20mm', name: '20MM M61 VULCAN', short: '1·20MM', kind: 'cannon', dmgType: 'heavy_cal', reticle: 'gun', cooldown: 0.075, ammoMax: 120, reloadTime: 3.0, dmg: 85, vehDmg: 38, splash: 3.6, spread: 0.011 },
+    { id: 'agm', name: 'AGM-65 MISSILES', short: '2·AGM', kind: 'rocket', dmgType: 'explosive', reticle: 'missile', cooldown: 0.95, ammoMax: 4, reloadTime: 5.4, blastR: 19.0, dmg: 260, vehDmg: 380, speedBonus: 62 }
   ],
   humvee: [
-    { id: 'm2', name: 'M2 .50 CAL BROWNING', short: '1·.50CAL', kind: 'cannon', reticle: 'gun', cooldown: 0.115, ammoMax: 80, reloadTime: 3.2, dmg: 78, vehDmg: 32, splash: 0, spread: 0.015 },
-    { id: 'mk19', name: 'MK19 40MM LAUNCHER', short: '2·40MM', kind: 'rocket', reticle: 'missile', cooldown: 0.72, ammoMax: 6, reloadTime: 4.5, blastR: 12.0, dmg: 185, vehDmg: 210, speedBonus: 36 }
+    { id: 'm2', name: 'M2 .50 CAL BROWNING', short: '1·.50CAL', kind: 'cannon', dmgType: 'heavy_cal', reticle: 'gun', cooldown: 0.115, ammoMax: 80, reloadTime: 3.2, dmg: 78, vehDmg: 34, splash: 0, spread: 0.015 },
+    { id: 'mk19', name: 'MK19 40MM LAUNCHER', short: '2·40MM', kind: 'rocket', dmgType: 'explosive', reticle: 'missile', cooldown: 0.72, ammoMax: 6, reloadTime: 4.5, blastR: 12.0, dmg: 185, vehDmg: 220, speedBonus: 36 }
   ],
   boat: [
-    { id: 'm2', name: 'M2 .50 CAL BROWNING', short: '1·.50CAL', kind: 'cannon', reticle: 'gun', cooldown: 0.115, ammoMax: 80, reloadTime: 3.2, dmg: 78, vehDmg: 32, splash: 0, spread: 0.015 },
-    { id: 'mk19', name: 'MK19 40MM LAUNCHER', short: '2·40MM', kind: 'rocket', reticle: 'missile', cooldown: 0.72, ammoMax: 6, reloadTime: 4.5, blastR: 12.0, dmg: 185, vehDmg: 210, speedBonus: 36 }
+    { id: 'm2', name: 'M2 .50 CAL BROWNING', short: '1·.50CAL', kind: 'cannon', dmgType: 'heavy_cal', reticle: 'gun', cooldown: 0.115, ammoMax: 80, reloadTime: 3.2, dmg: 78, vehDmg: 34, splash: 0, spread: 0.015 },
+    { id: 'mk19', name: 'MK19 40MM LAUNCHER', short: '2·40MM', kind: 'rocket', dmgType: 'explosive', reticle: 'missile', cooldown: 0.72, ammoMax: 6, reloadTime: 4.5, blastR: 12.0, dmg: 185, vehDmg: 220, speedBonus: 36 }
   ]
 };
 
 function getVehicleWeapons(v) {
   if (!v) return null;
+  if (v.style === 'tank') return VEHICLE_WEAPONS.tank;
   if (v.type === 'heli') return VEHICLE_WEAPONS.heli;
   if (v.type === 'plane') return VEHICLE_WEAPONS.plane;
   if (v.type === 'boat') return VEHICLE_WEAPONS.boat;
@@ -5853,6 +6501,20 @@ function getVehicleWeapons(v) {
 
 function hasNativeWeapons(v) {
   return !!getVehicleWeapons(v);
+}
+
+/* Exact Driver vs Gunner Crosshair & Weapon Ownership Rule:
+   - If the player IS in the gunner seat: player controls mounted weapons & sees crosshair.
+   - If the player IS a passenger: no vehicle turret crosshair.
+   - If the player IS the driver/pilot:
+     * Vehicles with a dedicated Driver Turret (Tank, Attack Heli, Fighter Jet) KEEP driver crosshair even when a gunner occupies the gunner seat!
+     * Vehicles with a single shared turret (Humvee, Patrol Gunboat, Speedboat) HIDE the driver crosshair & disable driver firing whenever an ally NPC or teammate player controls the gunner seat! */
+function canDriverUseVehicleWeapons(v) {
+  if (!v || !hasNativeWeapons(v)) return false;
+  if (activeSeat === 'gunner') return true;
+  if (activeSeat === 'passenger') return false;
+  if (v.hasDriverTurret) return true;
+  return !v.gunner;
 }
 
 function ensureVehicleWeapons(v) {
@@ -5899,7 +6561,7 @@ function reloadVehicleWeapon(v) {
 
 function fireSelectedVehicleWeapon(v) {
   const list = ensureVehicleWeapons(v);
-  if (!list || v.wrecked) return;
+  if (!list || v.wrecked || (v === activeVehicle && !canDriverUseVehicleWeapons(v))) return;
   const idx = v.weaponIndex || 0;
   const spec = list[idx];
   if ((v.weaponCooldowns[idx] || 0) > 0 || v.weaponReload[idx] > 0) return;
@@ -5930,6 +6592,11 @@ const vehicleWorldPipPos = new THREE.Vector3();
 let vehicleWorldPipValid = false;
 
 function getVehicleMuzzlePos(v, sideSign = 0, isRocket = false) {
+  if (v.style === 'tank') {
+    const ty = (v.heading || 0) + (v.turretYaw || 0);
+    const tfx = -Math.sin(ty), tfz = -Math.cos(ty);
+    return new THREE.Vector3(v.x + tfx * 4.4, (v.y || 0) + 1.82, v.z + tfz * 4.4);
+  }
   const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
   const rx = Math.cos(v.heading), rz = -Math.sin(v.heading);
   const isGround = !v.type || v.type === 'car' || v.type === 'boat';
@@ -5969,7 +6636,7 @@ function updateVehicleReticle() {
   const el = $('vehicle-reticle');
   const wpEl = $('vr-world-pip');
   if (!el) return;
-  const show = G.mode === 'playing' && !!activeVehicle && hasNativeWeapons(activeVehicle);
+  const show = G.mode === 'playing' && !!activeVehicle && canDriverUseVehicleWeapons(activeVehicle);
   el.classList.toggle('hidden', !show);
   if (!show) {
     if (wpEl) wpEl.classList.add('hidden');
@@ -6106,11 +6773,34 @@ function fireAircraftCannon(v, spec) {
   }
   if (hit) {
     end = hit.point.clone();
-    if (hit.object.userData.actor) {
+    const dmgType = s.dmgType || 'heavy_cal';
+    if (s.explosiveImpact) {
+      spawnExplosion(end.x, Math.max(0.25, end.y), end.z, 1.95);
+      G.sound.crash(0.95);
+      const splashR = s.splash || 12.5;
+      for (const list of [thugs, cops]) {
+        for (const a of list) {
+          if (!a.alive) continue;
+          const d = dist2(end.x, end.z, a.group.position.x, a.group.position.z);
+          if (d < splashR) damageActor(a, (s.dmg || 260) * (1 - d / splashR), a.group.position.clone().setY(1.2), false, 'torso');
+        }
+      }
+      const allV = cars.concat(helis, planes, boats);
+      for (const vv of allV) {
+        if (vv.wrecked || vv === v) continue;
+        const vd = dist2(end.x, end.z, vv.x, vv.z);
+        if (vd < splashR) {
+          const hitDmg = (s.vehDmg || 380) * (1 - vd / (splashR * 1.15));
+          const pen = damageVehicle(vv, hitDmg, new THREE.Vector3(vv.x, (vv.y || 0) + 0.9, vv.z), dmgType);
+          if (pen) showHitmarker(vv.hp <= 0);
+        }
+      }
+      suppressNearbyHostiles(end.x, end.z, v.x, v.z, 24);
+    } else if (hit.object.userData.actor) {
       damageActor(hit.object.userData.actor, s.dmg || 90, end, false, 'torso');
     } else if (hit.object.userData.car && hit.object.userData.car !== v) {
-      if (!hit.object.userData.car.wrecked) showHitmarker(hit.object.userData.car.hp <= (s.vehDmg || 40));
-      damageVehicle(hit.object.userData.car, s.vehDmg || 40, end);
+      const pen = damageVehicle(hit.object.userData.car, s.vehDmg || 40, end, dmgType);
+      if (pen && !hit.object.userData.car.wrecked) showHitmarker(hit.object.userData.car.hp <= (s.vehDmg || 40));
       addImpactFlash(end, 0xff9e38, 0.85);
     } else {
       spawnParticles(end.x, end.y, end.z, 0xffc86b, 8, 5.5, 0.35, 10);
@@ -6208,7 +6898,7 @@ function updateAircraftRockets(dt) {
         const vd = dist2(p.x, p.z, vv.x, vv.z);
         if (vd < blastR) {
           showHitmarker(vv.hp <= (r.vehDmg || 320) * (1 - vd / blastR));
-          damageVehicle(vv, (r.vehDmg || 320) * (1 - vd / blastR), new THREE.Vector3(vv.x, (vv.y || 0) + 0.8, vv.z));
+          damageVehicle(vv, (r.vehDmg || 320) * (1 - vd / blastR), new THREE.Vector3(vv.x, (vv.y || 0) + 0.8, vv.z), 'explosive');
         }
       }
       suppressNearbyHostiles(p.x, p.z, p.x, p.z, 22);
@@ -6462,27 +7152,36 @@ function updateDrivenBoat(dt, v) {
 function updateDrivenCar(dt) {
   if (!activeVehicle) return;
   const v = activeVehicle;
+  /* When riding as Gunner or Passenger in a teammate's vehicle, only run turret/weapons! */
+  if (activeSeat !== 'driver') {
+    if (v.style === 'humvee' && v.model && v.model.turret && activeSeat === 'gunner') {
+      v.model.turret.rotation.y = player.carLookYaw;
+    }
+    if (hasNativeWeapons(v)) updateVehicleWeapons(dt, v);
+    return;
+  }
   if (v.type === 'heli') { updateDrivenHeli(dt, v); return; }
   if (v.type === 'plane') { updateDrivenPlane(dt, v); return; }
   if (v.type === 'boat') { updateDrivenBoat(dt, v); return; }
   const car = activeVehicle;
+  const isTank = car.style === 'tank';
   const throttle = Math.max((keys.KeyW || keys.ArrowUp) ? 1 : 0, gamepadState.throttle);
   const brake = Math.max((keys.KeyS || keys.ArrowDown) ? 1 : 0, gamepadState.brake);
   const kbSteer = ((keys.KeyA || keys.ArrowLeft) ? 1 : 0) - ((keys.KeyD || keys.ArrowRight) ? 1 : 0);
   const steer = clamp(kbSteer + gamepadState.steer, -1, 1);
   const handbrake = (keys.Space || gamepadState.jump) ? 1 : 0;
-  const boosting = (keys.ShiftLeft || keys.ShiftRight || gamepadState.sprint) && throttle > 0.1;
+  const boosting = !isTank && (keys.ShiftLeft || keys.ShiftRight || gamepadState.sprint) && throttle > 0.1;
 
-  const accel = boosting ? 20.5 : 14.0;
+  const accel = isTank ? 8.5 : (boosting ? 20.5 : 14.0);
   const topSpeed = car.maxSpeed * (boosting ? 1.26 : 1.0);
   if (throttle > 0.05) car.speed += accel * throttle * dt;
   if (brake > 0.05) {
     if (car.speed > 0.5) car.speed -= 24 * brake * dt;
-    else car.speed -= 8.5 * brake * dt;
+    else car.speed -= (isTank ? 6.5 : 8.5) * brake * dt;
   }
   if (throttle <= 0.05 && brake <= 0.05) car.speed *= 1 - 2.4 * dt;
   if (handbrake) car.speed *= 1 - 3.8 * dt;
-  car.speed = clamp(car.speed, -10, topSpeed);
+  car.speed = clamp(car.speed, isTank ? -7 : -10, topSpeed);
   if (Math.abs(car.speed) < 0.05) car.speed = 0;
 
   if (boosting && car.speed > 8 && Math.random() < dt * 20) {
@@ -6491,9 +7190,25 @@ function updateDrivenCar(dt) {
     spawnParticles(bx, 0.42, bz, 0xff8a1f, 2, 3.2, 0.18, 2);
   }
 
-  if (Math.abs(steer) > 0.02 && Math.abs(car.speed) > 0.4) {
+  if (isTank && Math.abs(steer) > 0.02) {
+    /* Main Battle Tank neutral-steer: rotates cleanly in place or while rolling! */
+    const dirSign = car.speed < -0.4 ? -1 : 1;
+    car.heading += steer * dt * 1.05 * dirSign;
+  } else if (Math.abs(steer) > 0.02 && Math.abs(car.speed) > 0.4) {
     const grip = handbrake ? 1.65 : 1.05;
     car.heading += steer * dt * 1.6 * grip * clamp(Math.abs(car.speed) / 9, 0.25, 1) * Math.sign(car.speed);
+  }
+
+  /* Rotating 3D Tank Turret + Elevating 120mm Barrel (and solo Humvee roof gun) */
+  if (isTank && car.model && car.model.turret) {
+    let diff = player.carLookYaw - (car.turretYaw || 0);
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    car.turretYaw = (car.turretYaw || 0) + clamp(diff, -2.4 * dt, 2.4 * dt);
+    car.model.turret.rotation.y = car.turretYaw;
+    if (car.model.barrel) car.model.barrel.rotation.x = clamp(player.carLookPitch, -0.18, 0.42);
+  } else if (car.style === 'humvee' && car.model && car.model.turret && !car.gunner) {
+    car.model.turret.rotation.y = player.carLookYaw;
   }
 
   /* Destructible street furniture checks */
@@ -7896,7 +8611,8 @@ function updateCameraOnFoot(dt, moving, strafe) {
   /* Dynamic FOV for ADS + Variable Zoom */
   const baseFov = 75;
   const zoomMag = ZOOM_LEVELS[player.zoomIndex] || 1.25;
-  const adsFov = baseFov / zoomMag;
+  const opticMag = weaponHasScope() ? ATTACHMENTS.scope.zoomBonus : 1;
+  const adsFov = baseFov / (zoomMag * opticMag);
   const targetFov = lerp(baseFov, adsFov, player.adsBlend);
   if (Math.abs(camera.fov - targetFov) > 0.05) {
     camera.fov = lerp(camera.fov, targetFov, 1 - Math.exp(-dt * 12));
@@ -7980,7 +8696,8 @@ function updateCameraCar(dt) {
   if (v.type === 'plane') { updateCameraPlane(dt, v); return; }
   if (v.type === 'boat') { updateCameraBoat(dt, v); return; }
   const car = activeVehicle;
-  car.group.visible = player.cameraMode === '3p';
+  const isTank = car.style === 'tank';
+  car.group.visible = player.cameraMode === '3p' || activeSeat !== 'driver';
   const shake = player.shake;
   const sx = (Math.random() - 0.5) * shake * 0.02;
   const sy = (Math.random() - 0.5) * shake * 0.02;
@@ -7990,18 +8707,34 @@ function updateCameraCar(dt) {
   const camPitch = clamp(player.carLookPitch + (Math.random() - 0.5) * shake * 0.02, -0.55, 0.65);
 
   if (player.cameraMode === '1p') {
-    const isTall = car.style === 'humvee' || car.style === 'suv' || car.style === 'van' || car.style === 'armored';
-    const eyeY = isTall ? 1.56 : 1.32;
-    const offset = new THREE.Vector3(-0.28, eyeY, -0.18).applyAxisAngle(new THREE.Vector3(0, 1, 0), car.heading);
-    camera.position.set(car.x + offset.x + sx, eyeY + sy, car.z + offset.z);
-    camera.rotation.order = 'YXZ';
-    camera.rotation.set(camPitch, camYaw, -steer * 0.016 * clamp(Math.abs(car.speed) / 10, 0, 1));
+    if (activeSeat === 'gunner') {
+      const offArr = car.seatOffsetGunner || [0, 1.48, 0.25];
+      const offset = new THREE.Vector3(offArr[0], offArr[1] + 0.62, offArr[2]).applyAxisAngle(new THREE.Vector3(0, 1, 0), car.heading);
+      camera.position.set(car.x + offset.x + sx, (car.y || 0) + offArr[1] + 0.62 + sy, car.z + offset.z);
+      camera.rotation.order = 'YXZ';
+      camera.rotation.set(camPitch, camYaw, 0);
+    } else if (isTank) {
+      /* Tank Gunner/Driver Main Turret Optic */
+      const ty = car.heading + (car.turretYaw || 0);
+      const tfx = -Math.sin(ty), tfz = -Math.cos(ty);
+      camera.position.set(car.x + tfx * 1.4 + sx, 2.22 + sy, car.z + tfz * 1.4);
+      camera.rotation.order = 'YXZ';
+      camera.rotation.set(camPitch, camYaw, 0);
+    } else {
+      const isTall = car.style === 'humvee' || car.style === 'suv' || car.style === 'van' || car.style === 'armored';
+      const eyeY = isTall ? 1.56 : 1.32;
+      const offset = new THREE.Vector3(-0.28, eyeY, -0.18).applyAxisAngle(new THREE.Vector3(0, 1, 0), car.heading);
+      camera.position.set(car.x + offset.x + sx, eyeY + sy, car.z + offset.z);
+      camera.rotation.order = 'YXZ';
+      camera.rotation.set(camPitch, camYaw, -steer * 0.016 * clamp(Math.abs(car.speed) / 10, 0, 1));
+    }
   } else {
-    /* 3rd-Person Chase Camera behind vehicle (elevated above roof for crisp aiming) */
+    /* 3rd-Person Chase Camera behind vehicle (elevated above roof/turret for crisp aiming) */
     const backX = Math.sin(camYaw), backZ = Math.cos(camYaw);
-    const dist = 6.5 + clamp(Math.abs(car.speed) / 12, 0, 1.5);
-    camera.position.set(car.x + backX * dist + sx, 3.05 + sy, car.z + backZ * dist);
-    camera.lookAt(car.x - backX * 12.0, 1.85 + camPitch * 8.0, car.z - backZ * 12.0);
+    const dist = (isTank ? 9.2 : 6.5) + clamp(Math.abs(car.speed) / 12, 0, 1.5);
+    const camY = isTank ? 4.25 : 3.05;
+    camera.position.set(car.x + backX * dist + sx, camY + sy, car.z + backZ * dist);
+    camera.lookAt(car.x - backX * 14.0, (isTank ? 2.4 : 1.85) + camPitch * 8.5, car.z - backZ * 14.0);
     camera.rotation.order = 'YXZ';
   }
 
@@ -8372,18 +9105,27 @@ function updateSpeedHUD() {
     : clamp(Math.abs(v.speed) / Math.max(1, v.maxSpeed) * 100, 0, 100);
   if (fillEl) fillEl.style.width = barPct + '%';
   if (nameEl) {
-    let label = v.isPolice ? 'KCPD CRUISER' : (v.style === 'humvee' ? 'TACTICAL HUMVEE' : 'VULCAN GT');
+    let label = v.isPolice ? 'KCPD CRUISER' : (v.style === 'tank' ? 'M1A2 ABRAMS MBT' : v.style === 'humvee' ? 'TACTICAL HUMVEE' : v.style === 'armored' ? 'ARMORED APC' : 'VULCAN GT');
     if (v.type === 'heli') label = G.gameMode === 'bf' ? 'AH-64 GUNSHIP' : 'KC POLICE HELI';
     else if (v.type === 'plane') label = G.gameMode === 'bf' ? 'F-26 SKYHAWK JET' : 'KC SKYHAWK';
     else if (v.type === 'boat') label = v.boatKind === 'speedboat' ? (G.gameMode === 'bf' ? 'ASSAULT RHIB' : 'KC RIVER RUNNER') : (G.gameMode === 'bf' ? 'PATROL GUNBOAT' : 'KCPD PATROL BOAT');
     const hullPct = v.maxHp ? Math.max(0, Math.round((v.hp / v.maxHp) * 100)) : 100;
-    nameEl.textContent = v.onFire ? (label + ' · ON FIRE! ' + hullPct + '%') : (label + ' · HULL ' + hullPct + '%');
+    const armorTag = v.armorTier === 'heavy' ? ' [HEAVY ARMOR]' : v.armorTier === 'armored' ? ' [ARMORED]' : '';
+    nameEl.textContent = v.onFire ? (label + ' · ON FIRE! ' + hullPct + '%') : (label + armorTag + ' · HULL ' + hullPct + '%');
+  }
+  const crewEl = $('vehicle-crew');
+  if (crewEl) {
+    const gLabel = v.gunner === 'player' ? 'YOU' : (v.gunner ? (v.gunner.name || 'BLUEFOR ALLY') : 'OPEN');
+    const pCount = v.passengers ? v.passengers.length : 0;
+    const seatStr = activeSeat.toUpperCase();
+    crewEl.textContent = 'SEAT: ' + seatStr + (v.hasGunnerSeat ? (' · GUNNER: ' + gLabel) : '') + (pCount ? (' · PASS: ' + pCount) : '') + ' · [Z] CREW';
   }
   const vwBox = $('vehicle-weapons');
   const wList = ensureVehicleWeapons(v);
+  const canUseWep = canDriverUseVehicleWeapons(v);
   if (vwBox) {
-    vwBox.classList.toggle('hidden', !wList);
-    if (wList) {
+    vwBox.classList.toggle('hidden', !wList || !canUseWep);
+    if (wList && canUseWep) {
       const idx = v.weaponIndex || 0;
       const spec = wList[idx];
       const reloading = v.weaponReload[idx] > 0;
@@ -8485,7 +9227,11 @@ function updateHUD() {
   if ($('slot-2')) $('slot-2').classList.toggle('active', state.weapon === 1);
   if ($('slot-3')) $('slot-3').classList.toggle('active', state.weapon === 2);
   if ($('slot-4')) $('slot-4').classList.toggle('active', state.weapon === 3);
-  const slotNames = G.gameMode === 'bf' ? ['1·M1911', '2·M4A1', '3·AK-47', '4·M24'] : ['1·PISTOL', '2·CARBINE', '3·SHOTGUN', '4·SNIPER'];
+  if ($('slot-5')) {
+    $('slot-5').classList.toggle('active', state.weapon === 4);
+    $('slot-5').classList.toggle('hidden', G.gameMode !== 'bf');
+  }
+  const slotNames = G.gameMode === 'bf' ? ['1·M1911', '2·M4A1', '3·AK-47', '4·M24', '5·RPG'] : ['1·PISTOL', '2·CARBINE', '3·SHOTGUN', '4·SNIPER'];
   for (let i = 0; i < slotNames.length; i++) {
     const slot = $('slot-' + (i + 1));
     if (slot) slot.textContent = slotNames[i];
@@ -8561,8 +9307,10 @@ function updateHUD() {
     } else if (preferVendor) {
       vehiclePrompt.innerHTML = '<span class="key">E</span> ' + vendorCart.name;
     } else if (carNear) {
-      const vLabel = nearestCar.type === 'heli' ? 'HELICOPTER' : nearestCar.type === 'plane' ? 'AIRCRAFT' : nearestCar.type === 'boat' ? (nearestCar.boatKind === 'speedboat' ? 'SPEEDBOAT' : 'PATROL GUNBOAT') : (nearestCar.style === 'humvee' ? 'HUMVEE' : 'VEHICLE');
-      vehiclePrompt.innerHTML = '<span class="key">F</span> ENTER ' + vLabel;
+      const hasTeammateDriver = !!nearestCar.driver && nearestCar.driver !== 'player' && nearestCar.team === PLAYER_TEAM;
+      const vLabel = nearestCar.type === 'heli' ? 'HELICOPTER' : nearestCar.type === 'plane' ? 'AIRCRAFT' : nearestCar.type === 'boat' ? (nearestCar.boatKind === 'speedboat' ? 'SPEEDBOAT' : 'PATROL GUNBOAT') : (nearestCar.style === 'tank' ? 'M1A2 TANK' : nearestCar.style === 'humvee' ? 'HUMVEE' : 'VEHICLE');
+      const roleLabel = hasTeammateDriver ? ((nearestCar.hasGunnerSeat && !nearestCar.gunner) ? ' AS GUNNER' : ' AS PASSENGER') : '';
+      vehiclePrompt.innerHTML = '<span class="key">F</span> ' + (hasTeammateDriver ? 'BOARD ' : 'ENTER ') + vLabel + roleLabel;
     }
   }
 
@@ -9544,6 +10292,8 @@ function wireUI() {
   function setMode(mode, reload) {
     G.gameMode = mode;
     writeStore('poly_gameMode', mode);
+    const weaponKeys = $('weapon-keys');
+    if (weaponKeys) weaponKeys.textContent = mode === 'bf' ? '1-5' : '1-4';
     if (modeGtb) modeGtb.style.borderColor = mode === 'gtb' ? 'var(--amber)' : 'var(--line)';
     if (modeGtb) modeGtb.style.color = mode === 'gtb' ? 'var(--amber)' : 'var(--cream-dim)';
     if (modeBf) modeBf.style.borderColor = mode === 'bf' ? 'var(--amber)' : 'var(--line)';
@@ -9710,13 +10460,17 @@ function wireUI() {
       const canInteract = !!activeInterior || !!findNearestVendorCart() || !!findNearestShop() || !!findNearestInteriorDoor() || (state.contract.stage === 'travel' && state.contract.marker && contractDistance() < 7);
       if (canInteract && !player.aiming && !activeVehicle) interact();
     } else if (e.code === 'KeyR') {
-      if (activeVehicle && hasNativeWeapons(activeVehicle)) reloadVehicleWeapon(activeVehicle);
+      if (activeVehicle && canDriverUseVehicleWeapons(activeVehicle)) reloadVehicleWeapon(activeVehicle);
       else startReload();
     }
     else if (e.code === 'KeyG') throwGrenade();
     else if (e.code === 'KeyL') toggleFlashlight();
     else if (e.code === 'KeyV') toggleCameraMode();
-    else if (e.code === 'KeyC' || e.code === 'ControlLeft' || e.code === 'ControlRight') toggleCrouch();
+    else if (e.code === 'KeyZ' && activeVehicle) callAllyCrewToVehicle(activeVehicle);
+    else if (e.code === 'KeyC' || e.code === 'ControlLeft' || e.code === 'ControlRight') {
+      if (activeVehicle && activeVehicle.type !== 'heli' && activeVehicle.type !== 'plane') switchPlayerSeat();
+      else toggleCrouch();
+    }
     else if (e.code === 'KeyB') cycleZoom(1);
     else if (e.code === 'KeyN') cycleWeather();
     else if (e.code === 'KeyK') cycleTimeOfDay();
@@ -9726,15 +10480,16 @@ function wireUI() {
       notify('VOICE', m === 'open' ? 'OPEN MIC ENABLED (45m)' : 'PUSH-TO-TALK [T] (45m)');
     }
     else if (e.code === 'Digit1') {
-      if (activeVehicle && hasNativeWeapons(activeVehicle)) switchVehicleWeapon(0);
+      if (activeVehicle && canDriverUseVehicleWeapons(activeVehicle)) switchVehicleWeapon(0);
       else switchWeapon(0);
     }
     else if (e.code === 'Digit2') {
-      if (activeVehicle && hasNativeWeapons(activeVehicle)) switchVehicleWeapon(1);
+      if (activeVehicle && canDriverUseVehicleWeapons(activeVehicle)) switchVehicleWeapon(1);
       else switchWeapon(1);
     }
     else if (e.code === 'Digit3') switchWeapon(2);
     else if (e.code === 'Digit4') switchWeapon(3);
+    else if (e.code === 'Digit5' && G.gameMode === 'bf') switchWeapon(4);
     else if (e.code === 'Escape') pauseGame();
   });
 
@@ -9782,8 +10537,11 @@ function wireUI() {
     if (e.button === 0) {
       pointer.firing = true;
       state.firing = true;
-      if (hasVehWep) fireSelectedVehicleWeapon(activeVehicle);
-      else tryShoot();
+      if (hasVehWep) {
+        if (canDriverUseVehicleWeapons(activeVehicle)) fireSelectedVehicleWeapon(activeVehicle);
+      } else {
+        tryShoot();
+      }
     } else if (e.button === 2) {
       pointer.aiming = true;
       updateHUD();
@@ -9803,17 +10561,20 @@ function wireUI() {
   document.addEventListener('wheel', (e) => {
     if (G.mode !== 'playing' || rpMenuOpen) return;
     if (activeVehicle) {
-      const wList = getVehicleWeapons(activeVehicle);
-      if (wList && wList.length > 1) {
-        const nextIdx = ((activeVehicle.weaponIndex || 0) + (e.deltaY > 0 ? 1 : wList.length - 1)) % wList.length;
-        switchVehicleWeapon(nextIdx);
+      if (canDriverUseVehicleWeapons(activeVehicle)) {
+        const wList = getVehicleWeapons(activeVehicle);
+        if (wList && wList.length > 1) {
+          const nextIdx = ((activeVehicle.weaponIndex || 0) + (e.deltaY > 0 ? 1 : wList.length - 1)) % wList.length;
+          switchVehicleWeapon(nextIdx);
+        }
       }
       return;
     }
     if (player.aiming) {
       cycleZoom(e.deltaY < 0 ? 1 : -1);
     } else {
-      const nextW = (state.weapon + (e.deltaY > 0 ? 1 : WEAPONS.length - 1)) % WEAPONS.length;
+      const weaponCount = (G.gameMode === 'bf' ? BF_WEAPONS : WEAPONS).length;
+      const nextW = (state.weapon + (e.deltaY > 0 ? 1 : weaponCount - 1)) % weaponCount;
       switchWeapon(nextW);
     }
   }, { passive: true });
@@ -9958,8 +10719,10 @@ function loop() {
     updateThugs(dt);
     updateAllies(dt);
     updateGrenades(dt);
+    updatePlayerRockets(dt);
     updateAircraftRockets(dt);
     updateVehicleDestruction(dt);
+    updateVehicleCrew(dt);
     updateWanted(dt);
     updateContract(dt);
     updateBattlefield(dt);
@@ -9971,7 +10734,7 @@ function loop() {
       const pz = activeVehicle ? activeVehicle.z : player.pos.z;
       KC.multiplayer.update(dt, {
         x: px,
-        y: player.pos.y + 0.14,
+        y: activeVehicle ? (activeVehicle.y || 0.14) : (player.pos.y + 0.14),
         z: pz,
         yaw: activeVehicle ? activeVehicle.heading : player.yaw,
         pitch: player.pitch,
@@ -9983,7 +10746,10 @@ function loop() {
         reloading: state.reloading,
         weaponIndex: state.weapon,
         flashlightOn: player.flashlightOn,
-        inCar: !!activeVehicle
+        inCar: !!activeVehicle,
+        team: PLAYER_TEAM,
+        vehId: activeVehicle ? activeVehicle.vehId : null,
+        seat: activeVehicle ? activeSeat : null
       }, state.nightFactor);
     }
     updateEffects(dt);
@@ -10158,8 +10924,15 @@ window.HEARTLAND = {
   damageVehicle,
   switchVehicleWeapon,
   fireSelectedVehicleWeapon,
+  canDriverUseVehicleWeapons,
+  mountAllyToVehicle,
+  dismountAllyFromVehicle,
+  callAllyCrewToVehicle,
+  switchPlayerSeat,
   throwGrenade,
   getActiveVehicle: () => activeVehicle,
+  getActiveSeat: () => activeSeat,
+  getAllies: () => allies,
   getHelis: () => helis,
   getPlanes: () => planes,
   getCars: () => cars,

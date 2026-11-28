@@ -148,6 +148,7 @@
             <span class="slot" id="slot-2">2·CARBINE</span>
             <span class="slot" id="slot-3">3·SHOTGUN</span>
             <span class="slot" id="slot-4">4·SNIPER</span>
+            <span class="slot hidden" id="slot-5">5·RPG</span>
           </div>
           <div class="reload-hint" id="reload-hint">R // RELOAD · G // GRENADE</div>
           <div id="attachments" style="margin-top:4px;font-size:9px;letter-spacing:0.14em;color:var(--cream-dim);">ATTACHMENTS: NONE</div>
@@ -156,6 +157,7 @@
           <div class="speed-row"><span id="speed">0</span><span class="mph">MPH</span></div>
           <div class="speed-bar"><div id="speed-fill"></div></div>
           <div class="vehicle-name" id="vehicle-name">VULCAN GT</div>
+          <div class="vehicle-crew" id="vehicle-crew" style="margin-top:3px;font-size:9px;letter-spacing:0.16em;color:var(--amber);"></div>
           <div id="vehicle-weapons" class="vehicle-weapons hidden">
             <div class="vw-active-row">
               <span id="vw-name">30MM CHAIN GUN</span>
@@ -242,7 +244,7 @@
           <div class="control"><span class="key">J</span><span class="control-label">LIVE EVENT</span></div>
           <div class="control"><span class="key">H</span><span class="control-label">RP / EMOTES</span></div>
           <div class="control"><span class="key">G</span><span class="control-label">GRENADE</span></div>
-          <div class="control"><span class="key key-wide">1-4</span><span class="control-label">WEAPONS</span></div>
+          <div class="control"><span class="key key-wide" id="weapon-keys">1-4</span><span class="control-label">WEAPONS</span></div>
           <div class="control"><span class="key key-wide">XINPUT</span><span class="control-label">GAMEPAD</span></div>
         </div>
       </div>
@@ -478,6 +480,7 @@
               <button class="btn btn-secondary bf-class-btn" data-class="recon">RECON<small>M24 · Scope+Sil</small></button>
               <button class="btn btn-secondary bf-class-btn" data-class="breacher">BREACHER<small>AK-47 · 4 Frag</small></button>
               <button class="btn btn-secondary bf-class-btn" data-class="support">SUPPORT<small>M4A1 · ExtMag</small></button>
+              <button class="btn btn-secondary bf-class-btn" data-class="antiarmor" style="grid-column:1/-1;">ANTI-ARMOR<small>RPG-7 · 3 Rockets</small></button>
             </div>
             <div class="deploy-section-label" style="margin-top:10px;">CONTROLLED SECTORS</div>
             <div id="spawn-list" class="spawn-list-grid"></div>
@@ -526,6 +529,6 @@
   <script src="js/landmarks.js?v=20261128j"></script>
   <script src="js/props.js?v=20261128j"></script>
   <script src="js/multiplayer.js?v=20261128j"></script>
-  <script src="js/game.js?v=20261128j"></script>
+  <script src="js/game.js?v=20261128l"></script>
 </body>
 </html>

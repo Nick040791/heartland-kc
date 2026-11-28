@@ -1452,6 +1452,9 @@
             weaponIndex: msg.weaponIndex || 0,
             flashlightOn: !!msg.flashlightOn,
             inCar: !!msg.inCar,
+            team: msg.team || 'blue',
+            vehId: msg.vehId || null,
+            seat: msg.seat || null,
             speaking: !!msg.speaking,
             walkPhase: 0,
             lastSeen: performance.now()
@@ -1475,6 +1478,9 @@
             peer.weaponIndex = msg.weaponIndex || 0;
             peer.flashlightOn = !!msg.flashlightOn;
             peer.inCar = !!msg.inCar;
+            peer.team = msg.team || peer.team || 'blue';
+            peer.vehId = msg.vehId || null;
+            peer.seat = msg.seat || null;
             peer.speaking = !!msg.speaking;
           }
           if (msg.char && JSON.stringify(msg.char) !== JSON.stringify(peer.char)) {
@@ -1612,6 +1618,9 @@
           weaponIndex: localState.weaponIndex || 0,
           flashlightOn: !!localState.flashlightOn,
           inCar: !!localState.inCar,
+          team: localState.team || 'blue',
+          vehId: localState.vehId || null,
+          seat: localState.seat || null,
           speaking: isTransmitting,
           char: KC.charConfig
         });
