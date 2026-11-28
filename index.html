@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0a0a0d">
   <title>HEARTLAND 26 — Kansas City Multiplayer Open-World Sandbox</title>
-  <link rel="stylesheet" href="css/style.css?v=20261128c">
+  <link rel="stylesheet" href="css/style.css?v=20261128g">
 </head>
 <body>
   <div id="app">
@@ -87,7 +87,20 @@
         <div class="hitmarker" id="hitmarker"><span></span><span></span><span></span><span></span></div>
       </div>
 
-      <div id="vehicle-prompt" class="vehicle-prompt hidden"><span class="key">E</span> ENTER VEHICLE</div>
+      <div id="vehicle-reticle" class="vehicle-reticle hidden mode-gun" aria-hidden="true">
+        <div class="vr-ring"></div>
+        <div class="vr-brackets">
+          <span class="vr-b vr-tl"></span><span class="vr-b vr-tr"></span>
+          <span class="vr-b vr-bl"></span><span class="vr-b vr-br"></span>
+        </div>
+        <span class="vr-tick vr-t"></span><span class="vr-tick vr-r"></span>
+        <span class="vr-tick vr-b-tick"></span><span class="vr-tick vr-l"></span>
+        <span class="vr-pip"></span>
+        <div class="vr-tag" id="vr-tag">30MM CHAIN GUN</div>
+        <div class="vr-meta"><span id="vr-ammo">60/60</span> · <span id="vr-range">---M</span></div>
+      </div>
+
+      <div id="vehicle-prompt" class="vehicle-prompt hidden"><span class="key">F</span> ENTER VEHICLE</div>
       <div id="mission-prompt" class="mission-prompt hidden"><span class="key">E</span> START CONTRACT</div>
 
       <div id="notifications" class="notifications"></div>
@@ -118,7 +131,7 @@
           <span class="tac-pill hidden" id="hud-gamepad">🎮 XINPUT</span>
           <span class="tac-pill" id="hud-stance">STAND · 1P</span>
           <span class="tac-pill" id="hud-grenades">GRENADE x3 [G]</span>
-          <span class="tac-pill" id="hud-flashlight">FLASHLIGHT OFF [F]</span>
+          <span class="tac-pill" id="hud-flashlight">FLASHLIGHT OFF [L]</span>
           <span class="tac-pill" id="hud-zoom">ZOOM 1.3x</span>
         </div>
         <div id="weapon-hud" class="weapon-hud">
@@ -138,10 +151,21 @@
           <div class="speed-row"><span id="speed">0</span><span class="mph">MPH</span></div>
           <div class="speed-bar"><div id="speed-fill"></div></div>
           <div class="vehicle-name" id="vehicle-name">VULCAN GT</div>
+          <div id="vehicle-weapons" class="vehicle-weapons hidden">
+            <div class="vw-active-row">
+              <span id="vw-name">30MM CHAIN GUN</span>
+              <span id="vw-ammo">60 / 60</span>
+            </div>
+            <div class="vw-bar"><div id="vw-bar-fill"></div></div>
+            <div class="vw-slots">
+              <span class="vw-slot active" id="vw-slot-0">1·CANNON</span>
+              <span class="vw-slot" id="vw-slot-1">2·ROCKETS</span>
+            </div>
+          </div>
           <div class="vehicle-dash" id="vehicle-dash" style="margin-top:6px;padding:4px 8px;background:rgba(0,0,0,0.55);border:1px solid rgba(242,232,213,0.2);font-size:10px;letter-spacing:0.12em;">
             <span>HDG <b id="dash-hdg">0</b></span> · <span>ALT <b id="dash-alt">0</b></span> · <span>SPD <b id="dash-spd">0</b></span>
           </div>
-          <div class="vehicle-exit"><span class="key">E</span> EXIT · <span class="key">RMB</span> AIM · <span class="key">LMB</span> FIRE</div>
+          <div class="vehicle-exit"><span class="key">F</span> EXIT · <span class="key">RMB</span> AIM · <span class="key">LMB</span> FIRE</div>
         </div>
       </div>
 
@@ -203,11 +227,11 @@
           <div class="control"><span class="key key-wide">LMB/RMB</span><span class="control-label">FIRE / AIM</span></div>
           <div class="control"><span class="key">Q</span><span class="key">E</span><span class="control-label">LEAN L/R</span></div>
           <div class="control"><span class="key">C</span><span class="control-label">CROUCH/SLIDE</span></div>
-          <div class="control"><span class="key">F</span><span class="control-label">FLASHLIGHT</span></div>
+          <div class="control"><span class="key">L</span><span class="control-label">FLASHLIGHT</span></div>
           <div class="control"><span class="key">V</span><span class="control-label">1P / 3P CAM</span></div>
           <div class="control"><span class="key">B</span><span class="control-label">ZOOM 1x-3x</span></div>
           <div class="control"><span class="key">T</span><span class="control-label">VOICE (45m)</span></div>
-          <div class="control"><span class="key">E</span><span class="control-label">VEHICLE</span></div>
+          <div class="control"><span class="key">F</span><span class="control-label">ENTER/EXIT VEH</span></div>
           <div class="control"><span class="key">N</span><span class="control-label">WEATHER</span></div>
           <div class="control"><span class="key">K</span><span class="control-label">TIME +4H</span></div>
           <div class="control"><span class="key">J</span><span class="control-label">LIVE EVENT</span></div>
@@ -492,11 +516,11 @@
 
   <script src="vendor/three.min.js"></script>
   <script src="vendor/peerjs.min.js"></script>
-  <script src="js/audio.js?v=20261128e"></script>
-  <script src="js/world.js?v=20261128e"></script>
-  <script src="js/landmarks.js?v=20261128e"></script>
-  <script src="js/props.js?v=20261128e"></script>
-  <script src="js/multiplayer.js?v=20261128e"></script>
-  <script src="js/game.js?v=20261128e"></script>
+  <script src="js/audio.js?v=20261128g"></script>
+  <script src="js/world.js?v=20261128g"></script>
+  <script src="js/landmarks.js?v=20261128g"></script>
+  <script src="js/props.js?v=20261128g"></script>
+  <script src="js/multiplayer.js?v=20261128g"></script>
+  <script src="js/game.js?v=20261128g"></script>
 </body>
 </html>

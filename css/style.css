@@ -177,6 +177,83 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .ch-dot { position: absolute; width: 2px; height: 2px; left: -1px; top: -1px; background: var(--amber); box-shadow: 0 0 4px rgba(0,0,0,0.9); }
 .crosshair.hidden-cross { opacity: 0; }
 
+/* Tactical Native Vehicle Gunner / Aircraft Weapons Reticle */
+.vehicle-reticle {
+  position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+  pointer-events: none; z-index: 12;
+  --vr-color: #63f5b2;
+  --vr-scale: 1;
+  transition: transform 0.06s ease-out;
+  transform: scale(var(--vr-scale));
+}
+.vehicle-reticle.hidden { display: none; }
+.vehicle-reticle.mode-missile { --vr-color: #ffb84d; }
+.vehicle-reticle.vr-locked { --vr-color: #ff4747; }
+.vehicle-reticle.vr-firing { --vr-scale: 1.12; }
+
+.vr-ring {
+  position: absolute; left: -24px; top: -24px; width: 48px; height: 48px;
+  border-radius: 50%; border: 1.5px solid var(--vr-color);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.85), inset 0 0 6px rgba(0, 0, 0, 0.5);
+  opacity: 0.9;
+}
+.vehicle-reticle.mode-missile .vr-ring {
+  left: -14px; top: -14px; width: 28px; height: 28px;
+  border-radius: 0; transform: rotate(45deg);
+  border-style: dashed;
+}
+.vr-brackets {
+  position: absolute; left: -34px; top: -34px; width: 68px; height: 68px;
+  opacity: 0.42; transition: opacity 0.12s, transform 0.12s;
+}
+.vehicle-reticle.mode-missile .vr-brackets { opacity: 0.95; transform: scale(1.06); }
+.vehicle-reticle.vr-locked .vr-brackets { opacity: 1; transform: scale(0.88); }
+.vr-b { position: absolute; width: 12px; height: 12px; border-color: var(--vr-color); border-style: solid; border-width: 0; box-shadow: 0 0 4px rgba(0,0,0,0.85); }
+.vr-tl { left: 0; top: 0; border-top-width: 2px; border-left-width: 2px; }
+.vr-tr { right: 0; top: 0; border-top-width: 2px; border-right-width: 2px; }
+.vr-bl { left: 0; bottom: 0; border-bottom-width: 2px; border-left-width: 2px; }
+.vr-br { right: 0; bottom: 0; border-bottom-width: 2px; border-right-width: 2px; }
+
+.vr-tick { position: absolute; background: var(--vr-color); box-shadow: 0 0 4px rgba(0,0,0,0.9); }
+.vr-t { width: 2px; height: 11px; left: -1px; top: -33px; }
+.vr-b-tick { width: 2px; height: 11px; left: -1px; top: 22px; }
+.vr-l { width: 11px; height: 2px; top: -1px; left: -33px; }
+.vr-r { width: 11px; height: 2px; top: -1px; left: 22px; }
+.vr-pip {
+  position: absolute; left: -2px; top: -2px; width: 4px; height: 4px;
+  background: var(--vr-color); box-shadow: 0 0 6px var(--vr-color), 0 0 3px #000;
+}
+.vr-tag {
+  position: absolute; left: 50%; top: 42px; transform: translateX(-50%);
+  white-space: nowrap; font-family: var(--condensed); font-size: 11px;
+  letter-spacing: 0.16em; color: var(--vr-color);
+  text-shadow: 0 1px 4px #000; background: rgba(7, 6, 9, 0.58);
+  padding: 1px 6px; border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.vr-meta {
+  position: absolute; left: 50%; top: 60px; transform: translateX(-50%);
+  white-space: nowrap; font-size: 9px; letter-spacing: 0.14em;
+  color: rgba(242, 232, 213, 0.9); text-shadow: 0 1px 3px #000;
+}
+
+.vehicle-weapons {
+  margin-top: 8px; padding: 6px 8px;
+  background: rgba(6, 8, 12, 0.62);
+  border: 1px solid rgba(87, 230, 194, 0.28);
+  text-align: right;
+}
+.vehicle-weapons.hidden { display: none; }
+.vw-active-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  font-family: var(--condensed); font-size: 13px; letter-spacing: 0.1em; color: var(--cream);
+}
+.vw-active-row #vw-ammo { color: var(--amber); font-size: 14px; }
+.vw-bar { height: 3px; background: rgba(242,232,213,0.14); margin: 4px 0 6px; overflow: hidden; }
+#vw-bar-fill { height: 100%; width: 100%; background: var(--teal); transition: width 0.1s; }
+.vw-slots { display: flex; justify-content: flex-end; gap: 10px; font-size: 9px; letter-spacing: 0.14em; color: rgba(242,232,213,0.35); }
+.vw-slot { padding: 1px 5px; border: 1px solid transparent; }
+.vw-slot.active { color: var(--amber); border-color: rgba(255, 184, 77, 0.55); background: rgba(255, 184, 77, 0.12); }
+
 .hitmarker { position: absolute; left: 0; top: 0; width: 0; height: 0; opacity: 0; }
 .hitmarker span { position: absolute; width: 9px; height: 2px; background: #fff; box-shadow: 0 0 3px #000; }
 .hitmarker span:nth-child(1) { left: 7px; top: -10px; transform: rotate(45deg); }
