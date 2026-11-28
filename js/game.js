@@ -1866,8 +1866,9 @@ function updateCarCockpitView(dt) {
 }
 
 function updateWeaponView(dt) {
-  /* Strict asset culling: ONLY show 1st-person weapon viewmodel in 1P on foot while playing! */
-  const aimingInVehicle = !!activeVehicle && (player.aiming || pointer.aiming || gamepadState.aim);
+  /* Strict asset culling: don't show hand pistol inside aircraft (aircraft have onboard cannons/rockets) */
+  const isAircraft = !!activeVehicle && (activeVehicle.type === 'heli' || activeVehicle.type === 'plane');
+  const aimingInVehicle = !!activeVehicle && !isAircraft && (player.aiming || pointer.aiming || gamepadState.aim);
   const show = G.mode === 'playing' && player.cameraMode === '1p' && !!weaponGroups.length && (!activeVehicle || aimingInVehicle);
   weaponRoot.visible = show;
   if (!show) {
@@ -5296,70 +5297,307 @@ function exitCar() {
 /* ============================================================
    Extended Vehicle Physics: Helicopter, Plane, Boat
    ============================================================ */
-function updateDrivenHeli(dt, v) {
-  const forward = Math.max(keys.KeyW ? 1 : 0, gamepadState.throttle);
-  const backward = Math.max(keys.KeyS ? 1 : 0, gamepadState.brake);
-  const strafe = (keys.KeyA ? -1 : 0) + (keys.KeyD ? 1 : 0) + gamepadState.steer;
-  const upInput = (keys.Space || keys.KeyQ ? 1 : 0) - (keys.ShiftLeft || keys.ShiftRight || keys.KeyC ? 1 : 0);
-  v.rotorPhase += dt * (8 + Math.abs(v.speed) * 0.65);
-  if (v.model.rotorHub) v.model.rotorHub.rotation.y = v.rotorPhase;
-  if (v.model.tailRotor) v.model.tailRotor.rotation.x = v.rotorPhase * 1.4;
-  /* Vertical thrust */
-  v.verticalSpeed += upInput * 11 * dt;
-  v.verticalSpeed = clamp(v.verticalSpeed, -8, 10);
-  v.verticalSpeed *= 1 - 0.9 * dt;
-  v.y += v.verticalSpeed * dt;
-  if (v.y < 0.6) { v.y = 0.6; v.verticalSpeed = 0; }
-  if (v.y > 180) { v.y = 180; v.verticalSpeed = 0; }
-  /* Forward/back thrust along heading */
-  const thrust = (forward - backward) * 16;
-  v.speed += (thrust - v.speed * 0.55) * dt;
-  v.speed = clamp(v.speed, -10, v.maxSpeed);
-  /* Strafe / yaw */
-  v.heading -= strafe * dt * 1.1;
+/* ============================================================
+   Revamped Aircraft Flight Model (Gunship Helicopter & Fighter Jet)
+   + Onboard Autocannons (LMB) & Air-to-Ground Rockets (RMB)
+   ============================================================ */
+const activeRockets = [];
+
+function fireAircraftCannon(v) {
+  if (!v || (v.cannonCooldown || 0) > 0) return;
+  v.cannonCooldown = v.type === 'plane' ? 0.085 : 0.11;
+  v.cannonSide = -(v.cannonSide || 1);
+
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  dir.x += rand(-0.012, 0.012);
+  dir.y += rand(-0.012, 0.012);
+  dir.z += rand(-0.012, 0.012);
+  dir.normalize();
+
   const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
   const rx = Math.cos(v.heading), rz = -Math.sin(v.heading);
-  const nx = v.x + (fx * v.speed + rx * strafe * 5.5) * dt;
-  const nz = v.z + (fz * v.speed + rz * strafe * 5.5) * dt;
-  if (Math.abs(nx) < KC.WORLD_LIMIT && Math.abs(nz) < KC.WORLD_LIMIT) { v.x = nx; v.z = nz; }
-  else v.speed *= -0.3;
-  v.pitch = lerp(v.pitch, clamp(-v.speed * 0.011, -0.28, 0.28), 1 - Math.exp(-dt * 4));
-  v.roll = lerp(v.roll, clamp(-strafe * 0.28, -0.42, 0.42), 1 - Math.exp(-dt * 4));
+  const sideOff = v.type === 'plane' ? v.cannonSide * 2.4 : v.cannonSide * 0.55;
+  const muzzle = new THREE.Vector3(
+    v.x + fx * (v.type === 'plane' ? 2.8 : 2.9) + rx * sideOff,
+    v.y + (v.type === 'plane' ? 0.85 : 0.55),
+    v.z + fz * (v.type === 'plane' ? 2.8 : 2.9) + rz * sideOff
+  );
+
+  raycaster.set(camera.position, dir);
+  raycaster.far = 260;
+  const hits = raycaster.intersectObjects(getShootTargets(), false);
+  let end = camera.position.clone().addScaledVector(dir, 260);
+  if (hits.length) {
+    const h = hits[0];
+    end = h.point.clone();
+    if (h.object.userData.actor) {
+      damageActor(h.object.userData.actor, 95, end, false, 'torso');
+    } else {
+      spawnParticles(end.x, end.y, end.z, 0xffc86b, 8, 5.5, 0.35, 10);
+      addImpactFlash(end, 0xff9e38, 0.85);
+      /* 30mm HE splash radius */
+      for (const a of thugs) {
+        if (a.alive && dist2(end.x, end.z, a.group.position.x, a.group.position.z) < 4.5) {
+          damageActor(a, 55, a.group.position.clone().setY(1.2), false, 'torso');
+        }
+      }
+      suppressNearbyHostiles(end.x, end.z, v.x, v.z, 12);
+    }
+  }
+  addTracer(muzzle, end, 0xffc45c, 0.92);
+  addImpactFlash(muzzle, 0xffd27a, 0.65);
+  combatFlashLight.position.copy(muzzle);
+  combatFlashLight.intensity = 28;
+  player.shake = Math.max(player.shake, 0.09);
+  G.sound.shoot('rifle');
+}
+
+function fireAircraftRocket(v) {
+  if (!v || (v.rocketCooldown || 0) > 0) return;
+  v.rocketCooldown = v.type === 'plane' ? 1.1 : 0.85;
+  v.rocketSide = -(v.rocketSide || 1);
+
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  dir.normalize();
+
+  const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
+  const rx = Math.cos(v.heading), rz = -Math.sin(v.heading);
+  const sideOff = v.type === 'plane' ? v.rocketSide * 2.8 : v.rocketSide * 1.85;
+  const start = new THREE.Vector3(
+    v.x + fx * 2.0 + rx * sideOff,
+    v.y + (v.type === 'plane' ? 0.75 : 0.95),
+    v.z + fz * 2.0 + rz * sideOff
+  );
+
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.09, 0.95, 6),
+    new THREE.MeshStandardMaterial({ color: 0x3b4434, roughness: 0.6, flatShading: true })
+  );
+  mesh.position.copy(start);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  const flame = new THREE.Mesh(new THREE.SphereGeometry(0.14, 5, 4), new THREE.MeshBasicMaterial({ color: 0xffa638, toneMapped: false }));
+  flame.position.y = -0.52;
+  mesh.add(flame);
+  scene.add(mesh);
+
+  activeRockets.push({
+    mesh, dir: dir.clone(), speed: Math.max(62, Math.abs(v.speed) + 48), life: 4.5, smokeTimer: 0
+  });
+  player.shake = Math.max(player.shake, 0.22);
+  G.sound.shoot('rifle');
+  notify('ORDNANCE', v.type === 'plane' ? 'AGM MISSILE AWAY' : 'HYDRA ROCKET LAUNCHED', '');
+}
+
+function updateAircraftRockets(dt) {
+  for (let i = activeRockets.length - 1; i >= 0; i--) {
+    const r = activeRockets[i];
+    r.life -= dt;
+    const step = r.speed * dt;
+    raycaster.set(r.mesh.position, r.dir);
+    raycaster.far = step + 0.6;
+    const hits = raycaster.intersectObjects(getShootTargets(), false);
+    const nextPos = r.mesh.position.clone().addScaledVector(r.dir, step);
+    const hitGround = nextPos.y <= 0.15;
+    if (hits.length || hitGround || r.life <= 0) {
+      const p = hits.length ? hits[0].point : nextPos;
+      spawnExplosion(p.x, Math.max(0.25, p.y), p.z, 1.85);
+      G.sound.impact();
+      const blastR = 16.5;
+      for (const list of [thugs, cops]) {
+        for (const a of list) {
+          if (!a.alive) continue;
+          const d = dist2(p.x, p.z, a.group.position.x, a.group.position.z);
+          if (d < blastR) damageActor(a, 220 * (1 - d / blastR), a.group.position.clone().setY(1.2), false, 'torso');
+        }
+      }
+      suppressNearbyHostiles(p.x, p.z, p.x, p.z, 22);
+      scene.remove(r.mesh);
+      activeRockets.splice(i, 1);
+      continue;
+    }
+    r.mesh.position.copy(nextPos);
+    r.smokeTimer -= dt;
+    if (r.smokeTimer <= 0) {
+      r.smokeTimer = 0.035;
+      spawnGunsmoke(nextPos, 0.24, false);
+    }
+  }
+}
+
+function updateDrivenHeli(dt, v) {
+  v.cannonCooldown = Math.max(0, (v.cannonCooldown || 0) - dt);
+  v.rocketCooldown = Math.max(0, (v.rocketCooldown || 0) - dt);
+  v.vx = v.vx || 0;
+  v.vz = v.vz || 0;
+  v.yawVel = v.yawVel || 0;
+  v.mouseYaw = v.mouseYaw || 0;
+  v.mousePitch = v.mousePitch || 0;
+
+  const forward = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + gamepadState.throttle - gamepadState.brake;
+  const strafe = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) - gamepadState.steer;
+  const upInput = (keys.Space || keys.KeyQ ? 1 : 0) - (keys.ShiftLeft || keys.ShiftRight || keys.KeyC ? 1 : 0);
+
+  /* Smooth mouse yaw + gentle return-to-center cyclic pitch */
+  v.yawVel = lerp(v.yawVel, v.mouseYaw * 9.5, 1 - Math.exp(-dt * 12));
+  v.heading += v.yawVel * dt;
+  v.mouseYaw *= Math.exp(-dt * 14);
+
+  const airborne = v.y > 0.85;
+  /* Rotor spin smoothly ramps up when collective or moving */
+  const rotorSpd = airborne ? (18 + Math.abs(v.speed) * 0.45) : (upInput > 0 ? 14 : 6);
+  v.rotorPhase += dt * rotorSpd;
+  if (v.model.rotorHub) v.model.rotorHub.rotation.y = v.rotorPhase;
+  if (v.model.tailRotor) v.model.tailRotor.rotation.x = v.rotorPhase * 1.6;
+
+  /* Responsive Collective Vertical Lift with smooth Auto-Hover stabilization */
+  if (upInput !== 0) {
+    v.verticalSpeed += upInput * 16 * dt;
+  } else {
+    /* Auto-hover smoothly damps vertical drift to 0 */
+    v.verticalSpeed *= Math.exp(-dt * 3.8);
+  }
+  v.verticalSpeed = clamp(v.verticalSpeed, -11, 13);
+  v.y += v.verticalSpeed * dt;
+  if (v.y < 0.6) { v.y = 0.6; v.verticalSpeed = Math.max(0, v.verticalSpeed); }
+  if (v.y > 190) { v.y = 190; v.verticalSpeed = Math.min(0, v.verticalSpeed); }
+
+  /* 3D Momentum Cyclic Flight (W/S forward/reverse + Mouse Pitch assist + A/D circle-strafe!) */
+  const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
+  const rx = Math.cos(v.heading), rz = -Math.sin(v.heading);
+  const pitchDrive = airborne ? clamp(forward - v.mousePitch * 1.15, -1.1, 1.1) : forward * 0.25;
+  const strafeDrive = airborne ? clamp(strafe, -1, 1) : 0;
+
+  const accelF = 24;
+  const accelS = 19;
+  v.vx += (fx * pitchDrive * accelF + rx * strafeDrive * accelS) * dt;
+  v.vz += (fz * pitchDrive * accelF + rz * strafeDrive * accelS) * dt;
+  /* Natural aerodynamic air drag */
+  const drag = Math.exp(-dt * (airborne ? 1.15 : 4.5));
+  v.vx *= drag;
+  v.vz *= drag;
+  const horizSpd = Math.hypot(v.vx, v.vz);
+  const maxSpd = v.maxSpeed || 32;
+  if (horizSpd > maxSpd) {
+    v.vx = (v.vx / horizSpd) * maxSpd;
+    v.vz = (v.vz / horizSpd) * maxSpd;
+  }
+  v.speed = v.vx * fx + v.vz * fz;
+
+  const nx = v.x + v.vx * dt;
+  const nz = v.z + v.vz * dt;
+  const lim = KC.WORLD_LIMIT - 8;
+  if (Math.abs(nx) < lim) v.x = nx; else v.vx *= -0.35;
+  if (Math.abs(nz) < lim) v.z = nz; else v.vz *= -0.35;
+
+  /* Realistic visual nose pitch & lateral bank roll matching flight vector */
+  const targetPitch = airborne ? clamp(-pitchDrive * 0.28 + v.mousePitch * 0.55, -0.45, 0.45) : 0;
+  const targetRoll = airborne ? clamp(-strafeDrive * 0.36 + v.yawVel * 0.14, -0.52, 0.52) : 0;
+  v.pitch = lerp(v.pitch || 0, targetPitch, 1 - Math.exp(-dt * 5.5));
+  v.roll = lerp(v.roll || 0, targetRoll, 1 - Math.exp(-dt * 5.5));
+  v.mousePitch *= Math.exp(-dt * 2.2);
+
   v.group.position.set(v.x, v.y, v.z);
   v.group.rotation.order = 'YXZ';
   v.group.rotation.set(v.pitch, v.heading, v.roll);
   player.pos.set(v.x, v.y - 0.6, v.z);
-  G.sound.updateEngine(Math.abs(v.speed) + Math.abs(v.verticalSpeed) * 0.5, (forward || backward || upInput) ? 1 : 0);
+  G.sound.updateEngine(horizSpd + Math.abs(v.verticalSpeed) * 0.8 + (airborne ? 8 : 0), (forward || upInput > 0) ? 1 : 0);
+
+  /* Onboard Gunship Weapons while holding LMB / RMB */
+  if (pointer.firing && !player.aiming) fireAircraftCannon(v);
 }
+
 function updateDrivenPlane(dt, v) {
-  const throttle = Math.max(keys.KeyW ? 1 : 0, gamepadState.throttle);
-  const brake = Math.max(keys.KeyS ? 1 : 0, gamepadState.brake);
-  const steer = (keys.KeyA ? 1 : 0) - (keys.KeyD ? 1 : 0) + gamepadState.steer;
-  const pitchInput = (keys.Space || keys.KeyQ ? 1 : 0) - (keys.ShiftLeft || keys.ShiftRight || keys.KeyC ? 1 : 0);
-  if (throttle) v.speed += 18 * dt;
-  if (brake) v.speed -= 24 * dt;
-  if (!throttle && !brake) v.speed *= 1 - 0.45 * dt;
-  v.speed = clamp(v.speed, 0, v.maxSpeed);
-  v.heading += steer * dt * 1.25 * clamp(v.speed / 12, 0.25, 1);
+  v.cannonCooldown = Math.max(0, (v.cannonCooldown || 0) - dt);
+  v.rocketCooldown = Math.max(0, (v.rocketCooldown || 0) - dt);
+  if (v.throttle == null) v.throttle = 0;
+  v.mouseRoll = v.mouseRoll || 0;
+  v.mousePitch = v.mousePitch || 0;
+
+  /* Persistent Jet Throttle: W ramps up to 100% Afterburner, S brakes down, holds cruise cleanly */
+  const thrUp = (keys.KeyW || keys.ArrowUp ? 1 : 0) + gamepadState.throttle;
+  const thrDown = (keys.KeyS || keys.ArrowDown ? 1 : 0) + gamepadState.brake;
+  if (thrUp > 0.05) v.throttle = clamp(v.throttle + dt * 0.58, 0, 1);
+  if (thrDown > 0.05) v.throttle = clamp(v.throttle - dt * 0.72, 0, 1);
+
   const airborne = v.y > 2.2;
-  const targetPitch = clamp(pitchInput * 0.42 + (airborne && v.speed < 14 ? -0.10 : 0), -0.52, 0.52);
-  v.pitch = lerp(v.pitch, targetPitch, 1 - Math.exp(-dt * 3.5));
-  v.roll = lerp(v.roll, clamp(steer * 0.52, -0.65, 0.65), 1 - Math.exp(-dt * 4.5));
+  const maxJetSpd = 64;
+  const targetSpd = v.throttle * maxJetSpd;
+  v.speed = lerp(v.speed, targetSpd, 1 - Math.exp(-dt * (thrDown > 0.05 ? 2.4 : 1.35)));
+  if (!airborne && v.throttle < 0.05) v.speed = Math.max(0, v.speed - 14 * dt);
+
+  /* Intuitive Mouse + Keyboard Bank/Roll & Pitch Flight Stick */
+  const kbRoll = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0) + gamepadState.steer;
+  const kbPitch = (keys.Space || keys.KeyQ ? 1 : 0) - (keys.ShiftLeft || keys.ShiftRight || keys.KeyC ? 1 : 0);
+
+  const rollInput = clamp(kbRoll - v.mouseRoll * 4.2, -1.2, 1.2);
+  const pitchInput = clamp(kbPitch + v.mousePitch * 3.8, -1.1, 1.1);
+  v.mouseRoll *= Math.exp(-dt * 7.5);
+  v.mousePitch *= Math.exp(-dt * 7.5);
+
+  if (airborne) {
+    /* Smooth coordinated banking: banking left/right smoothly carves a turn! */
+    const targetRoll = clamp(rollInput * 0.88, -1.05, 1.05);
+    v.roll = lerp(v.roll || 0, targetRoll, 1 - Math.exp(-dt * 5.2));
+    /* Heading turns proportionally to bank angle + gentle rudder input */
+    const turnRate = (v.roll * 1.15 + kbRoll * 0.35) * clamp(v.speed / 22, 0.35, 1.25);
+    v.heading += turnRate * dt;
+
+    /* Smooth aerodynamic pitch climb/dive (gentle nose drop only if stalling < 14 m/s) */
+    const stallDrop = v.speed < 14 ? -(14 - v.speed) * 0.025 : 0;
+    const desiredPitch = clamp((v.pitch || 0) + pitchInput * dt * 1.35 + stallDrop * dt, -0.78, 0.78);
+    /* Subtle auto-leveling when pilot lets go of pitch stick */
+    v.pitch = Math.abs(pitchInput) < 0.05 ? lerp(desiredPitch, 0, 1 - Math.exp(-dt * 0.65)) : desiredPitch;
+  } else {
+    /* On Runway: nosewheel steering + smooth liftoff once airspeed > 18 m/s! */
+    v.roll = lerp(v.roll || 0, 0, 1 - Math.exp(-dt * 8));
+    v.heading += kbRoll * dt * 1.15 * clamp(v.speed / 12, 0.2, 1);
+    if (v.speed >= 18 && (pitchInput > 0.05 || v.throttle > 0.75)) {
+      v.pitch = lerp(v.pitch || 0, Math.max(0.18, pitchInput * 0.36), 1 - Math.exp(-dt * 3.5));
+    } else {
+      v.pitch = lerp(v.pitch || 0, 0, 1 - Math.exp(-dt * 6));
+    }
+  }
+
+  /* 3D Flight Vector */
   const fx = -Math.sin(v.heading) * Math.cos(v.pitch);
   const fy = Math.sin(v.pitch);
   const fz = -Math.cos(v.heading) * Math.cos(v.pitch);
   v.x += fx * v.speed * dt;
   v.y += fy * v.speed * dt;
   v.z += fz * v.speed * dt;
-  v.y = clamp(v.y, 1.5, 160);
-  if (Math.abs(v.x) > KC.WORLD_LIMIT || Math.abs(v.z) > KC.WORLD_LIMIT) { v.speed *= 0.4; }
+  v.y = clamp(v.y, 1.5, 220);
+
+  /* Soft Airspace Turnback at Map Perimeter (never slam-stalls out of the sky!) */
+  const airLim = KC.WORLD_LIMIT - 12;
+  if (Math.abs(v.x) > airLim || Math.abs(v.z) > airLim) {
+    const toCenter = Math.atan2(v.x, v.z);
+    let diff = toCenter - v.heading;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    v.heading += clamp(diff, -1.6 * dt, 1.6 * dt);
+    v.x = clamp(v.x, -airLim - 8, airLim + 8);
+    v.z = clamp(v.z, -airLim - 8, airLim + 8);
+  }
+
   v.group.position.set(v.x, v.y, v.z);
   v.group.rotation.order = 'YXZ';
   v.group.rotation.set(v.pitch, v.heading, v.roll);
-  if (v.model.prop) v.model.prop.rotation.z += (4 + v.speed * 1.2) * dt * 6;
+  if (v.model.prop) v.model.prop.rotation.z += (5 + v.speed * 1.4) * dt * 6;
   player.pos.set(v.x, v.y - 0.6, v.z);
-  G.sound.updateEngine(v.speed, throttle);
-  if (v.y <= 1.55 && v.pitch < -0.25 && v.speed > 20) { v.speed *= 0.35; player.shake = Math.max(player.shake, 0.7); G.sound.crash(0.7); }
+  G.sound.updateEngine(v.speed * 0.9, v.throttle);
+
+  /* Smooth touchdown vs hard dive impact */
+  if (v.y <= 1.55 && v.pitch < -0.32 && v.speed > 26) {
+    v.speed *= 0.45;
+    v.pitch = 0;
+    player.shake = Math.max(player.shake, 0.75);
+    G.sound.crash(0.75);
+  }
+
+  /* Onboard Twin 20mm Vulcan Cannons while holding LMB */
+  if (pointer.firing && !player.aiming) fireAircraftCannon(v);
 }
 function updateDrivenBoat(dt, v) {
   const throttle = Math.max(keys.KeyW ? 1 : 0, gamepadState.throttle);
@@ -7262,24 +7500,36 @@ function drawMinimap() {
 
 function updateSpeedHUD() {
   if (!activeVehicle) return;
-  const mph = Math.round(Math.abs(activeVehicle.speed) * 2.237);
+  const v = activeVehicle;
+  const mph = Math.round(Math.abs(v.speed) * 2.237);
   const speedEl = $('speed');
   const fillEl = $('speed-fill');
   const nameEl = $('vehicle-name');
   if (speedEl) speedEl.textContent = String(mph);
-  if (fillEl) fillEl.style.width = clamp(Math.abs(activeVehicle.speed) / Math.max(1, activeVehicle.maxSpeed) * 100, 0, 100) + '%';
+  const barPct = v.type === 'plane'
+    ? clamp((v.throttle || 0) * 100, 0, 100)
+    : clamp(Math.abs(v.speed) / Math.max(1, v.maxSpeed) * 100, 0, 100);
+  if (fillEl) fillEl.style.width = barPct + '%';
   if (nameEl) {
-    const v = activeVehicle;
-    if (v.type === 'heli') nameEl.textContent = 'KC POLICE HELI';
-    else if (v.type === 'plane') nameEl.textContent = 'KC SKYHAWK';
-    else if (v.type === 'boat') nameEl.textContent = 'KC RIVER RUNNER';
-    else nameEl.textContent = v.isPolice ? 'KCPD CRUISER' : 'VULCAN GT';
+    if (v.type === 'heli') nameEl.textContent = G.gameMode === 'bf' ? 'AH-64 GUNSHIP' : 'KC POLICE HELI';
+    else if (v.type === 'plane') nameEl.textContent = G.gameMode === 'bf' ? 'F-26 SKYHAWK JET' : 'KC SKYHAWK';
+    else if (v.type === 'boat') nameEl.textContent = G.gameMode === 'bf' ? 'PATROL GUNBOAT' : 'KC RIVER RUNNER';
+    else nameEl.textContent = v.isPolice ? 'KCPD CRUISER' : (v.style === 'humvee' ? 'TACTICAL HUMVEE' : 'VULCAN GT');
   }
   const hdg = $('dash-hdg'); const alt = $('dash-alt'); const sp = $('dash-spd');
-  const v2 = activeVehicle;
-  if (hdg) hdg.textContent = String(Math.round(((v2.heading * 180 / Math.PI) % 360 + 360) % 360));
-  if (alt) alt.textContent = String(Math.round(v2.y || 0));
-  if (sp) sp.textContent = String(Math.round(Math.abs(v2.speed) * 2.237));
+  if (hdg) hdg.textContent = String(Math.round(((v.heading * 180 / Math.PI) % 360 + 360) % 360));
+  if (alt) alt.textContent = String(Math.round(v.y || 0)) + 'm';
+  if (sp) sp.textContent = v.type === 'plane' ? ('THR ' + Math.round((v.throttle || 0) * 100) + '%') : String(mph);
+  const hint = document.querySelector('#vehicle-hud .vehicle-exit');
+  if (hint) {
+    if (v.type === 'heli') {
+      hint.innerHTML = '<span class="key">W/S</span> THRUST · <span class="key">A/D</span> STRAFE · <span class="key">SPACE/SHIFT</span> ALT · <span class="key">LMB/RMB</span> GUN/ROCKET · <span class="key">V</span> CAM · <span class="key">E</span> EXIT';
+    } else if (v.type === 'plane') {
+      hint.innerHTML = '<span class="key">W/S</span> THROTTLE · <span class="key">MOUSE/AD</span> FLIGHT · <span class="key">LMB/RMB</span> CANNON/AGM · <span class="key">V</span> CAM · <span class="key">E</span> EXIT';
+    } else {
+      hint.innerHTML = '<span class="key">WASD</span> DRIVE · <span class="key">V</span> CAM · <span class="key">RMB</span> AIM · <span class="key">LMB</span> FIRE · <span class="key">E</span> EXIT';
+    }
+  }
 }
 
 function notify(tag, text, cls = '') {
@@ -8590,8 +8840,11 @@ function wireUI() {
     const zoomScale = player.aiming ? (0.7 / (ZOOM_LEVELS[player.zoomIndex] || 1.25)) : 1.0;
     const sens = pointer.sensitivity * 0.0021 * zoomScale;
     if (activeVehicle && activeVehicle.type === 'heli') {
-      activeVehicle.heading -= e.movementX * sens * 1.6;
-      activeVehicle.pitch = clamp(activeVehicle.pitch - e.movementY * sens * 1.4, -0.6, 0.6);
+      activeVehicle.mouseYaw = clamp((activeVehicle.mouseYaw || 0) - e.movementX * sens * 2.4, -1.8, 1.8);
+      activeVehicle.mousePitch = clamp((activeVehicle.mousePitch || 0) - e.movementY * sens * 1.15, -0.65, 0.65);
+    } else if (activeVehicle && activeVehicle.type === 'plane') {
+      activeVehicle.mouseRoll = clamp((activeVehicle.mouseRoll || 0) + e.movementX * sens * 2.2, -1.2, 1.2);
+      activeVehicle.mousePitch = clamp((activeVehicle.mousePitch || 0) - e.movementY * sens * 2.1, -1.0, 1.0);
     } else if (activeVehicle) {
       player.carLookYaw = clamp(player.carLookYaw - e.movementX * sens, -2.5, 2.5);
       player.carLookPitch = clamp(player.carLookPitch - e.movementY * sens, -0.4, 0.4);
@@ -8608,13 +8861,19 @@ function wireUI() {
       requestLock();
       return;
     }
+    const isAircraft = !!activeVehicle && (activeVehicle.type === 'heli' || activeVehicle.type === 'plane');
     if (e.button === 0) {
       pointer.firing = true;
       state.firing = true;
-      tryShoot();
+      if (isAircraft) fireAircraftCannon(activeVehicle);
+      else tryShoot();
     } else if (e.button === 2) {
-      pointer.aiming = true;
-      updateHUD();
+      if (isAircraft) {
+        fireAircraftRocket(activeVehicle);
+      } else {
+        pointer.aiming = true;
+        updateHUD();
+      }
     }
   });
 
@@ -8778,6 +9037,7 @@ function loop() {
     updateThugs(dt);
     updateAllies(dt);
     updateGrenades(dt);
+    updateAircraftRockets(dt);
     updateWanted(dt);
     updateContract(dt);
     updateBattlefield(dt);
