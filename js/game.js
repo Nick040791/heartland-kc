@@ -60,7 +60,9 @@ const postUniforms = {
   uResolution: { value: new THREE.Vector2(ps1Init.w, ps1Init.h) },
   uTime: { value: 0 },
   uChroma: { value: 0 },
-  uScanlines: { value: 0.08 }
+  uScanlines: { value: 0.08 },
+  uVisionMode: { value: 0 },
+  uNightFactor: { value: 0.7 }
 };
 const postMat = new THREE.ShaderMaterial({
   depthTest: false,
@@ -74,6 +76,8 @@ const postMat = new THREE.ShaderMaterial({
     'uniform float uTime;',
     'uniform float uChroma;',
     'uniform float uScanlines;',
+    'uniform float uVisionMode;',
+    'uniform float uNightFactor;',
     'varying vec2 vUv;',
     'float bayer4(vec2 p){',
     '  vec2 c = mod(floor(p), 4.0);',
@@ -95,6 +99,19 @@ const postMat = new THREE.ShaderMaterial({
     '    col.b = texture2D(tDiffuse, clamp(pxUv - vec2(ca, 0.0), 0.001, 0.999)).b;',
     '  } else {',
     '    col = texture2D(tDiffuse, pxUv).rgb;',
+    '  }',
+    '  float luminance = dot(col, vec3(0.299, 0.587, 0.114));',
+    '  if (uVisionMode > 0.5 && uVisionMode < 1.5) {',
+    '    float gain = mix(0.82, 1.95, uNightFactor);',
+    '    vec3 nvg = vec3(luminance * 0.42, luminance * 1.34, luminance * 0.58) * gain;',
+    '    float noise = fract(sin(dot(floor(pxUv * uResolution), vec2(12.9898, 78.233)) + uTime * 19.0) * 43758.5453) - 0.5;',
+    '    col = clamp(nvg + noise * 0.035, 0.0, 1.0);',
+    '  } else if (uVisionMode > 1.5) {',
+    '    float heat = clamp(luminance * (0.78 + uNightFactor * 0.22), 0.0, 1.0);',
+    '    vec3 thermal = mix(vec3(0.015, 0.035, 0.24), vec3(0.08, 0.42, 0.92), smoothstep(0.08, 0.36, heat));',
+    '    thermal = mix(thermal, vec3(0.95, 0.18, 0.035), smoothstep(0.40, 0.68, heat));',
+    '    thermal = mix(thermal, vec3(1.0, 0.86, 0.48), smoothstep(0.70, 0.96, heat));',
+    '    col = thermal;',
     '  }',
     '  /* Subtle 4-tap highlight halation / bloom for muzzle flash, lights & neon */',
     '  vec3 b1 = texture2D(tDiffuse, clamp(pxUv + vec2(texel.x * 2.0, 0.0), 0.0, 1.0)).rgb;',
@@ -551,6 +568,7 @@ const state = {
   timeMinutes: 19 * 60 + 30,
   daySpeed: 18, // game minutes per real second (full 24h cycle in ~80s, adjustable)
   nightFactor: 0.7, // 0 = bright midday, 1 = deep night
+  visionMode: 'off',
   weather: 'CLEAR', // 'CLEAR', 'RAIN', 'STORM', 'FOG', 'SNOW'
   weatherTimer: 95,
   lightningFlash: 0,
@@ -797,6 +815,16 @@ function toggleFlashlight() {
   player.flashlightOn = !player.flashlightOn;
   G.sound.flashlight(player.flashlightOn);
   notify('GEAR', player.flashlightOn ? 'FLASHLIGHT ON [L]' : 'FLASHLIGHT OFF [L]');
+  updateHUD();
+}
+
+function toggleVisionMode(mode) {
+  if (G.mode !== 'playing') return;
+  state.visionMode = state.visionMode === mode ? 'off' : mode;
+  postUniforms.uVisionMode.value = state.visionMode === 'nvg' ? 1 : state.visionMode === 'thermal' ? 2 : 0;
+  const label = state.visionMode === 'nvg' ? 'NIGHT VISION' : state.visionMode === 'thermal' ? 'THERMAL' : 'VISION FILTERS OFF';
+  G.sound.ui();
+  notify('OPTICS', label, state.visionMode === 'off' ? '' : 'money');
   updateHUD();
 }
 
@@ -9257,9 +9285,15 @@ function updateHUD() {
   }
   const zoomEl = $('hud-zoom');
   if (zoomEl) {
-    const zVal = ZOOM_LEVELS[player.zoomIndex] || 1.25;
+    const zVal = (ZOOM_LEVELS[player.zoomIndex] || 1.25) * (weaponHasScope() ? ATTACHMENTS.scope.zoomBonus : 1);
     zoomEl.textContent = (player.aiming ? 'ADS ' : 'ZOOM ') + zVal.toFixed(1) + 'x';
     zoomEl.classList.toggle('active', player.aiming);
+  }
+  const visionEl = $('hud-vision');
+  if (visionEl) {
+    visionEl.classList.toggle('hidden', state.visionMode === 'off');
+    visionEl.classList.toggle('active', state.visionMode !== 'off');
+    visionEl.textContent = state.visionMode === 'nvg' ? 'NIGHT VISION [I]' : 'THERMAL [O]';
   }
   const padEl = $('hud-gamepad');
   if (padEl) {
@@ -9275,7 +9309,8 @@ function updateHUD() {
   const crosshair = $('crosshair');
   if (crosshair) {
     /* Show personal weapon crosshair on foot AND inside unarmed wheeled vehicles (armed vehicles use #vehicle-reticle) */
-    const hideCross = !!activeVehicle && hasNativeWeapons(activeVehicle);
+    const hideCross = (!!activeVehicle && hasNativeWeapons(activeVehicle)) ||
+      (G.mode === 'playing' && player.cameraMode === '1p' && player.aiming && weaponHasScope());
     crosshair.classList.toggle('hidden-cross', hideCross);
     const gap = (player.aiming || pointer.aiming) ? 4 : (player.crouching ? 6 : 9);
     crosshair.style.setProperty('--gap', gap + 'px');
@@ -10472,6 +10507,8 @@ function wireUI() {
       else toggleCrouch();
     }
     else if (e.code === 'KeyB') cycleZoom(1);
+    else if (e.code === 'KeyI') toggleVisionMode('nvg');
+    else if (e.code === 'KeyO') toggleVisionMode('thermal');
     else if (e.code === 'KeyN') cycleWeather();
     else if (e.code === 'KeyK') cycleTimeOfDay();
     else if (e.code === 'KeyJ') triggerRandomEvent();
@@ -10665,6 +10702,10 @@ function renderFrame() {
   /* 2. Apply GLSL PS1 4x4 Bayer Dithering + 15-bit Quantization + Bloom + Scanlines to screen */
   renderer.setRenderTarget(null);
   postUniforms.uTime.value = updaterTime;
+  postUniforms.uNightFactor.value = state.nightFactor;
+  postUniforms.uVisionMode.value = G.mode === 'playing'
+    ? (state.visionMode === 'nvg' ? 1 : state.visionMode === 'thermal' ? 2 : 0)
+    : 0;
   renderer.clear();
   renderer.render(postScene, postCamera);
 }

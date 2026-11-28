@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0a0a0d">
   <title>HEARTLAND 26 — Kansas City Multiplayer Open-World Sandbox</title>
-  <link rel="stylesheet" href="css/style.css?v=20261128j">
+  <link rel="stylesheet" href="css/style.css?v=20261128k">
 </head>
 <body>
   <div id="app">
@@ -87,6 +87,16 @@
         <div class="hitmarker" id="hitmarker"><span></span><span></span><span></span><span></span></div>
       </div>
 
+      <div id="scope-view" class="scope-view hidden" aria-hidden="true">
+        <div class="scope-mask"></div>
+        <div class="scope-lens">
+          <span class="scope-line scope-line-horizontal"></span>
+          <span class="scope-line scope-line-vertical"></span>
+          <span class="scope-center"></span>
+        </div>
+        <div class="scope-readout">OPTIC // B TO ADJUST ZOOM</div>
+      </div>
+
       <div id="vehicle-reticle" class="vehicle-reticle hidden mode-gun" aria-hidden="true">
         <div class="vr-ring"></div>
         <div class="vr-brackets">
@@ -138,6 +148,7 @@
           <span class="tac-pill" id="hud-grenades">GRENADE x3 [G]</span>
           <span class="tac-pill" id="hud-flashlight">FLASHLIGHT OFF [L]</span>
           <span class="tac-pill" id="hud-zoom">ZOOM 1.3x</span>
+          <span class="tac-pill hidden" id="hud-vision"></span>
         </div>
         <div id="weapon-hud" class="weapon-hud">
           <div class="weapon-header"><span id="weapon-slot">01</span><span id="weapon-name">9MM PISTOL</span></div>
@@ -237,6 +248,8 @@
           <div class="control"><span class="key">L</span><span class="control-label">FLASHLIGHT</span></div>
           <div class="control"><span class="key">V</span><span class="control-label">1P / 3P CAM</span></div>
           <div class="control"><span class="key">B</span><span class="control-label">ZOOM 1x-3x</span></div>
+          <div class="control"><span class="key">I</span><span class="control-label">NIGHT VISION</span></div>
+          <div class="control"><span class="key">O</span><span class="control-label">THERMAL</span></div>
           <div class="control"><span class="key">T</span><span class="control-label">VOICE (45m)</span></div>
           <div class="control"><span class="key">F</span><span class="control-label">ENTER/EXIT VEH</span></div>
           <div class="control"><span class="key">N</span><span class="control-label">WEATHER</span></div>
@@ -529,6 +542,6 @@
   <script src="js/landmarks.js?v=20261128j"></script>
   <script src="js/props.js?v=20261128j"></script>
   <script src="js/multiplayer.js?v=20261128j"></script>
-  <script src="js/game.js?v=20261128l"></script>
+  <script src="js/game.js?v=20261128m"></script>
 </body>
 </html>

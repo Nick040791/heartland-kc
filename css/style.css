@@ -177,6 +177,38 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .ch-dot { position: absolute; width: 2px; height: 2px; left: -1px; top: -1px; background: var(--amber); box-shadow: 0 0 4px rgba(0,0,0,0.9); }
 .crosshair.hidden-cross { opacity: 0; }
 
+.scope-view {
+  position: fixed; inset: 0; z-index: 20; overflow: hidden;
+  pointer-events: none; color: #c9d8b3;
+}
+.scope-view.hidden { display: none; }
+.scope-mask {
+  position: absolute; inset: 0;
+  background: radial-gradient(circle at center, transparent 0 34vmin, rgba(0,0,0,0.92) 35vmin, #020303 40vmin);
+}
+.scope-lens {
+  position: absolute; left: 50%; top: 50%; width: min(70vmin, 76vw); aspect-ratio: 1;
+  transform: translate(-50%, -50%); border: 2px solid rgba(195, 207, 176, 0.78);
+  border-radius: 50%; box-shadow: 0 0 0 2px rgba(0,0,0,0.88), inset 0 0 18px rgba(0,0,0,0.4), 0 0 16px #000;
+}
+.scope-lens::before {
+  content: ''; position: absolute; inset: 8%; border: 1px solid rgba(195, 207, 176, 0.24);
+  border-radius: 50%;
+}
+.scope-line { position: absolute; display: block; background: rgba(195, 220, 174, 0.8); box-shadow: 0 0 3px #000; }
+.scope-line-horizontal { left: 8%; right: 8%; top: 50%; height: 1px; }
+.scope-line-vertical { top: 8%; bottom: 8%; left: 50%; width: 1px; }
+.scope-center {
+  position: absolute; left: 50%; top: 50%; width: 7px; height: 7px;
+  transform: translate(-50%, -50%); border: 1px solid #e8c17a; border-radius: 50%;
+  box-shadow: 0 0 4px #000;
+}
+.scope-readout {
+  position: absolute; top: calc(50% + 31vmin); left: 50%; transform: translateX(-50%);
+  color: rgba(211, 222, 194, 0.82); font-size: 9px; letter-spacing: 0.22em;
+  text-shadow: 0 1px 3px #000; white-space: nowrap;
+}
+
 /* Tactical Native Vehicle Gunner / Aircraft Weapons Reticle */
 .vehicle-reticle {
   position: absolute; left: 50%; top: 50%; width: 0; height: 0;
