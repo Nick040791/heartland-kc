@@ -1600,14 +1600,14 @@ function makePerson(opts = {}) {
   let shirtColor = opts.shirt;
   if (shirtColor == null) {
     if (type === 'cop') shirtColor = 0x2b4f7a;
-    else if (type === 'thug') shirtColor = 0x2a1f26;
+    else if (type === 'thug') shirtColor = opts.military ? 0x4a5a3a : 0x2a1f26;
     else if (role === 'fan') shirtColor = Math.random() < 0.6 ? 0xc8102e : 0x1d5bbf;
     else if (role === 'office') shirtColor = KC.pick([0x253244, 0x353942, 0xd8d4ca, 0x4a5b70]);
     else if (role === 'bbq') shirtColor = KC.pick([0x7a2620, 0x2a2729, 0x5c3828]);
     else if (role === 'worker') shirtColor = 0x2a394a;
     else shirtColor = KC.pick(SHIRT_COLORS);
   }
-  const pantsColor = type === 'cop' ? 0x182334 : type === 'thug' ? 0x1b171c : (opts.pants ?? KC.pick(PANTS_COLORS));
+  const pantsColor = type === 'cop' ? 0x182334 : type === 'thug' ? (opts.military ? 0x3a3a32 : 0x1b171c) : (opts.pants ?? KC.pick(PANTS_COLORS));
   const hairColor = opts.hair ?? KC.pick(HAIR_COLORS);
 
   const mb = KC.sharedMicroBump || null;
@@ -3028,6 +3028,26 @@ function spawnGangsters(count) {
   }
 }
 
+function spawnBattlefieldEnemies() {
+  if (!city || !city.enemySpawns) return;
+  for (const sp of city.enemySpawns) {
+    for (let i = 0; i < 4; i++) {
+      const t = makeHostile('thug', sp.x + rand(-6, 6), sp.z + rand(-6, 6), { military: true, gangster: false });
+      t.military = true;
+    }
+  }
+  if (city.zones) {
+    for (const z of city.zones) {
+      if (z.owner === 'enemy' || z.owner === 'neutral') {
+        for (let i = 0; i < 3; i++) {
+          const t = makeHostile('thug', z.x + rand(-20, 20), z.z + rand(-20, 20), { military: true });
+          t.military = true;
+        }
+      }
+    }
+  }
+}
+
 function spawnThugs(count, x, z) {
   for (let i = 0; i < count; i++) {
     let px = x, pz = z;
@@ -3064,12 +3084,37 @@ function updateHostile(actor, dt, peersList) {
   if (!actor.alive) return;
   const pos = actor.group.position;
   let target = activeVehicle ? activeVehicle.group.position : player.pos;
-  if (actor.gangster) {
-    if (!actor.wanderX) { actor.wanderX = actor.group.position.x; actor.wanderZ = actor.group.position.z; actor.nextWander = rand(3, 7); actor.randomShootTimer = rand(4, 9); }
+  if (actor.military) {
+    /* Military: seek cover/vehicles, engage player if seen */
+    const playerDist = dist2(pos.x, pos.z, player.pos.x, player.pos.z);
+    if (playerDist < 45 && hasLineOfSight(new THREE.Vector3(pos.x, 1.45, pos.z), new THREE.Vector3(player.pos.x, 1.15, player.pos.z))) {
+      target = (activeVehicle ? activeVehicle.group.position : player.pos);
+    } else {
+      /* Move toward nearest vehicle as cover */
+      let nearestV = null, nvD = 40;
+      for (const v of cars.concat(helis, boats)) {
+        const d = dist2(pos.x, pos.z, v.x, v.z);
+        if (d < nvD) { nvD = d; nearestV = v; }
+      }
+      if (nearestV) {
+        target = { x: nearestV.x, z: nearestV.z };
+      } else {
+        if (!actor.wanderX) { actor.wanderX = pos.x; actor.wanderZ = pos.z; actor.nextWander = rand(4, 8); }
+        actor.nextWander -= dt;
+        if (actor.nextWander <= 0 || dist2(pos.x, pos.z, actor.wanderX, actor.wanderZ) < 1.5) {
+          actor.wanderX = clamp(pos.x + rand(-20, 20), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
+          actor.wanderZ = clamp(pos.z + rand(-20, 20), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
+          actor.nextWander = rand(5, 10);
+        }
+        target = { x: actor.wanderX, z: actor.wanderZ };
+      }
+    }
+  } else if (actor.gangster) {
+    if (!actor.wanderX) { actor.wanderX = pos.x; actor.wanderZ = pos.z; actor.nextWander = rand(3, 7); actor.randomShootTimer = rand(4, 9); }
     actor.nextWander -= dt;
-    if (actor.nextWander <= 0 || dist2(actor.group.position.x, actor.group.position.z, actor.wanderX, actor.wanderZ) < 1.5) {
-      actor.wanderX = clamp(actor.group.position.x + rand(-30, 30), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
-      actor.wanderZ = clamp(actor.group.position.z + rand(-30, 30), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
+    if (actor.nextWander <= 0 || dist2(pos.x, pos.z, actor.wanderX, actor.wanderZ) < 1.5) {
+      actor.wanderX = clamp(pos.x + rand(-30, 30), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
+      actor.wanderZ = clamp(pos.z + rand(-30, 30), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
       actor.nextWander = rand(5, 12);
     }
     target = { x: actor.wanderX, z: actor.wanderZ };
@@ -3086,18 +3131,19 @@ function updateHostile(actor, dt, peersList) {
       actor.currentTarget = { x: criminal.group.position.x, z: criminal.group.position.z, actor: criminal };
     } else {
       actor.currentTarget = null;
-      if (state.wanted <= 0) {
-      /* Idle patrol: wander */
-      if (!actor.wanderX) { actor.wanderX = pos.x; actor.wanderZ = pos.z; actor.nextWander = rand(4, 8); }
-      actor.nextWander -= dt;
-      if (actor.nextWander <= 0 || dist2(pos.x, pos.z, actor.wanderX, actor.wanderZ) < 1.5) {
-        actor.wanderX = clamp(pos.x + rand(-20, 20), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
-        actor.wanderZ = clamp(pos.z + rand(-20, 20), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
-        actor.nextWander = rand(5, 10);
+      if (state.wanted > 0) {
+        target = activeVehicle ? activeVehicle.group.position : player.pos;
+      } else {
+        if (!actor.wanderX) { actor.wanderX = pos.x; actor.wanderZ = pos.z; actor.nextWander = rand(4, 8); }
+        actor.nextWander -= dt;
+        if (actor.nextWander <= 0 || dist2(pos.x, pos.z, actor.wanderX, actor.wanderZ) < 1.5) {
+          actor.wanderX = clamp(pos.x + rand(-20, 20), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
+          actor.wanderZ = clamp(pos.z + rand(-20, 20), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
+          actor.nextWander = rand(5, 10);
+        }
+        target = { x: actor.wanderX, z: actor.wanderZ };
       }
-      target = { x: actor.wanderX, z: actor.wanderZ };
     }
-  }
   }
   const tx = target.x, tz = target.z;
   const dx = tx - pos.x, dz = tz - pos.z;
@@ -4868,6 +4914,7 @@ function updateWantedUI() {
 
 function addWanted(n = 1, reason = '') {
   if (G.mode !== 'playing') return;
+  if (G.gameMode === 'bf') return;
   const before = state.wanted;
   state.wanted = clamp(state.wanted + n, 0, 5);
   state.evadeTimer = 0;
@@ -5950,8 +5997,12 @@ function resetActors() {
     arr.length = 0;
   }
   removeCorpses();
-  spawnPeds(82);
-  spawnGangsters(8);
+  if (G.gameMode !== 'bf') {
+    spawnPeds(82);
+    spawnGangsters(8);
+  } else {
+    spawnBattlefieldEnemies();
+  }
   spawnCityPickups();
 }
 
@@ -6897,8 +6948,13 @@ function init() {
   rebuildPlayerRig();
   spawnCars();
   spawnVehicles();
-  spawnPeds(82);
-  spawnGangsters(8);
+  if (G.gameMode !== 'bf') {
+    spawnPeds(82);
+    spawnGangsters(8);
+  } else {
+    /* Battlefield: no civilians/cops; spawn military squads */
+    spawnBattlefieldEnemies();
+  }
   spawnCityPickups();
   spawnInteriors();
   buildMinimap();
@@ -6961,6 +7017,7 @@ window.HEARTLAND = {
   get interiors() { return interiors; },
   get interiorDoors() { return interiorDoors; },
   get activeInterior() { return activeInterior; },
+  get bfZones() { return bfZones; },
   get helis() { return helis; },
   get planes() { return planes; },
   get boats() { return boats; },
