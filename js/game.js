@@ -404,6 +404,17 @@ const WEAPONS = [
   { name: 'SNIPER RIFLE', slot: '04', mag: 5, damage: 118, rate: 0.85, spread: 0.0012, adsSpread: 0.0003, moveSpread: 0.010, range: 300, falloff: 0.88, recoil: 0.025, recoilH: 0.007, reload: 2.6, sound: 'rifle', headMult: 3.5, torsoMult: 0.96, limbMult: 0.55 }
 ];
 
+const BF_WEAPONS = [
+  { ...WEAPONS[0], name: 'M1911 .45 PISTOL', mag: 8, damage: 48, rate: 0.24, reload: 1.4 },
+  { ...WEAPONS[1], name: 'M4A1 CARBINE', mag: 30, damage: 36, rate: 0.09, spread: 0.008, range: 190, reload: 1.7 },
+  { ...WEAPONS[2], name: 'AK-47 ASSAULT RIFLE', mag: 30, damage: 43, rate: 0.12, spread: 0.012, adsSpread: 0.004, moveSpread: 0.022, range: 175, falloff: 0.68, recoil: 0.012, reload: 1.9, pellets: 1 },
+  { ...WEAPONS[3], name: 'M24 MARKSMAN RIFLE', mag: 5, damage: 118 }
+];
+
+function getWeaponSpec(index = state.weapon) {
+  return (G.gameMode === 'bf' ? BF_WEAPONS : WEAPONS)[index];
+}
+
 const ZOOM_LEVELS = [1.25, 2.0, 3.2];
 
 const ATTACHMENTS = {
@@ -1255,6 +1266,7 @@ weaponScene.add(new THREE.AmbientLight(0xc4d4ee, 1.7));
   weaponScene.add(rim);
 }
 const weaponGroups = [];
+const battlefieldWeaponGroups = [];
 
 function gunBox(parent, w, h, d, mat, x, y, z, rx = 0, ry = 0, rz = 0) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -1445,6 +1457,108 @@ function buildSniperView() {
   return g;
 }
 
+function makeBattlefieldCamoTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 32;
+  const ctx = canvas.getContext('2d');
+  const colors = ['#313b2d', '#4b5039', '#242b25', '#675a3e', '#3c4534'];
+  ctx.fillStyle = colors[0];
+  ctx.fillRect(0, 0, 32, 32);
+  for (let y = 0; y < 32; y += 4) {
+    for (let x = 0; x < 32; x += 4) {
+      ctx.fillStyle = colors[(x * 3 + y * 5 + (x * y) % 7) % colors.length];
+      ctx.fillRect(x, y, 4, 4);
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
+function buildBattlefieldPistolView(camo) {
+  const g = new THREE.Group();
+  const metal = new THREE.MeshStandardMaterial({ color: 0x444b50, roughness: 0.5, metalness: 0.58, flatShading: true });
+  const slide = new THREE.MeshStandardMaterial({ color: 0x73796f, roughness: 0.4, metalness: 0.68, flatShading: true });
+  const grip = new THREE.MeshStandardMaterial({ map: camo, color: 0xb9b7a5, roughness: 0.9, flatShading: true });
+  const glove = new THREE.MeshStandardMaterial({ color: 0x8c8068, roughness: 0.95, flatShading: true });
+  gunBox(g, 0.15, 0.13, 0.49, slide, 0, 0.04, -0.18);
+  gunBox(g, 0.11, 0.035, 0.36, metal, 0, 0.125, -0.21);
+  gunCylinder(g, 0.033, 0.12, metal, 0, 0.04, -0.48);
+  gunBox(g, 0.14, 0.16, 0.16, grip, 0, -0.12, 0.08, -0.16);
+  gunBox(g, 0.045, 0.12, 0.09, metal, 0, -0.24, 0.09);
+  gunBox(g, 0.12, 0.035, 0.05, metal, 0, -0.02, 0.055);
+  gunBox(g, 0.035, 0.04, 0.035, metal, 0, 0.12, -0.42);
+  gunBox(g, 0.025, 0.035, 0.03, slide, 0, 0.12, 0.02);
+  gunBox(g, 0.17, 0.15, 0.2, glove, 0, -0.19, 0.2);
+  gunBox(g, 0.18, 0.18, 0.34, glove, 0.03, -0.33, 0.4);
+  const muzzle = new THREE.Vector3(0, 0.04, -0.53);
+  const flash = addMuzzleFlash(g, muzzle);
+  g.userData = { basePos: new THREE.Vector3(0.34, -0.225, -1), adsPos: new THREE.Vector3(0, -0.11, -0.8), baseRot: new THREE.Euler(0.02, 0.2, 0.02), adsRot: new THREE.Euler(), flash, muzzle };
+  g.position.copy(g.userData.basePos);
+  g.rotation.copy(g.userData.baseRot);
+  g.scale.setScalar(0.55);
+  return g;
+}
+
+function buildBattlefieldM4View(camo) {
+  const g = new THREE.Group();
+  const metal = new THREE.MeshStandardMaterial({ color: 0x343a3b, roughness: 0.48, metalness: 0.55, flatShading: true });
+  const polymer = new THREE.MeshStandardMaterial({ map: camo, color: 0xc3c1a8, roughness: 0.88, flatShading: true });
+  const glove = new THREE.MeshStandardMaterial({ color: 0x8c8068, roughness: 0.95, flatShading: true });
+  gunBox(g, 0.14, 0.14, 0.28, polymer, 0, 0.015, 0.38);
+  gunBox(g, 0.12, 0.13, 0.17, metal, 0, 0.02, 0.11);
+  gunBox(g, 0.15, 0.14, 0.32, metal, 0, 0.045, -0.13);
+  gunBox(g, 0.08, 0.2, 0.16, polymer, 0, -0.16, -0.08, -0.16);
+  gunBox(g, 0.11, 0.28, 0.12, metal, 0, -0.2, -0.24, -0.08);
+  gunBox(g, 0.09, 0.07, 0.38, metal, 0, 0.035, -0.48);
+  gunCylinder(g, 0.027, 0.54, metal, 0, 0.035, -0.91);
+  gunBox(g, 0.045, 0.055, 0.16, metal, 0, 0.035, -1.24);
+  gunBox(g, 0.045, 0.09, 0.065, metal, 0, 0.14, -0.59);
+  gunBox(g, 0.035, 0.09, 0.055, metal, 0, 0.16, -0.21);
+  gunBox(g, 0.06, 0.1, 0.23, metal, 0, 0.145, -0.3);
+  gunBox(g, 0.15, 0.12, 0.3, polymer, 0, -0.16, -0.43);
+  for (let i = 0; i < 5; i++) gunBox(g, 0.018, 0.025, 0.035, metal, 0.086, 0.04, -0.34 - i * 0.07);
+  gunBox(g, 0.18, 0.16, 0.24, glove, 0.015, -0.17, 0.13);
+  gunBox(g, 0.19, 0.19, 0.45, glove, 0.04, -0.33, 0.44, 0.08);
+  const muzzle = new THREE.Vector3(0, 0.035, -1.28);
+  const flash = addMuzzleFlash(g, muzzle);
+  g.userData = { basePos: new THREE.Vector3(0.36, -0.25, -1.12), adsPos: new THREE.Vector3(0, -0.145, -0.84), baseRot: new THREE.Euler(0.015, 0.17, 0.01), adsRot: new THREE.Euler(), flash, muzzle };
+  g.position.copy(g.userData.basePos);
+  g.rotation.copy(g.userData.baseRot);
+  g.scale.setScalar(0.52);
+  return g;
+}
+
+function buildBattlefieldAKView(camo) {
+  const g = new THREE.Group();
+  const metal = new THREE.MeshStandardMaterial({ color: 0x373a35, roughness: 0.52, metalness: 0.55, flatShading: true });
+  const wood = new THREE.MeshStandardMaterial({ color: 0x67452b, roughness: 0.88, flatShading: true });
+  const polymer = new THREE.MeshStandardMaterial({ map: camo, color: 0xb9b69f, roughness: 0.9, flatShading: true });
+  const glove = new THREE.MeshStandardMaterial({ color: 0x8c8068, roughness: 0.95, flatShading: true });
+  gunBox(g, 0.14, 0.13, 0.29, wood, 0, 0.01, 0.42, 0.05);
+  gunBox(g, 0.15, 0.16, 0.28, metal, 0, 0.025, 0.08);
+  gunBox(g, 0.13, 0.11, 0.34, wood, 0, 0.07, -0.31);
+  gunBox(g, 0.08, 0.055, 0.32, metal, 0, 0.16, -0.31);
+  gunBox(g, 0.045, 0.055, 0.42, metal, 0, 0.045, -0.68);
+  gunCylinder(g, 0.026, 0.62, metal, 0, 0.045, -1.15);
+  gunBox(g, 0.05, 0.065, 0.13, metal, 0, 0.045, -1.52);
+  gunBox(g, 0.04, 0.1, 0.06, metal, 0, 0.15, -0.86);
+  gunBox(g, 0.035, 0.085, 0.055, metal, 0, 0.15, -0.15);
+  gunBox(g, 0.1, 0.22, 0.13, polymer, 0, -0.15, -0.01, -0.18);
+  gunBox(g, 0.11, 0.26, 0.18, metal, 0, -0.32, -0.17, -0.28);
+  gunBox(g, 0.18, 0.16, 0.27, glove, 0.01, -0.17, 0.11);
+  gunBox(g, 0.2, 0.2, 0.48, glove, 0.04, -0.33, 0.45, 0.08);
+  const muzzle = new THREE.Vector3(0, 0.045, -1.57);
+  const flash = addMuzzleFlash(g, muzzle);
+  g.userData = { basePos: new THREE.Vector3(0.36, -0.25, -1.14), adsPos: new THREE.Vector3(0, -0.145, -0.86), baseRot: new THREE.Euler(0.015, 0.17, 0.01), adsRot: new THREE.Euler(), flash, muzzle };
+  g.position.copy(g.userData.basePos);
+  g.rotation.copy(g.userData.baseRot);
+  g.scale.setScalar(0.5);
+  return g;
+}
+
 function setupWeapons() {
   if (weaponGroups.length) return;
   const pistol = buildPistolView();
@@ -1452,7 +1566,14 @@ function setupWeapons() {
   const shotgun = buildShotgunView();
   const sniper = buildSniperView();
   weaponGroups.push(pistol, rifle, shotgun, sniper);
-  for (const g of weaponGroups) {
+  const camo = makeBattlefieldCamoTexture();
+  battlefieldWeaponGroups.push(
+    buildBattlefieldPistolView(camo),
+    buildBattlefieldM4View(camo),
+    buildBattlefieldAKView(camo),
+    buildSniperView()
+  );
+  for (const g of weaponGroups.concat(battlefieldWeaponGroups)) {
     g.visible = false;
     weaponRoot.add(g);
   }
@@ -1927,28 +2048,20 @@ function updateCarCockpitView(dt) {
   carCockpit.wiperL.rotation.z = wipeAngle;
   carCockpit.wiperR.rotation.z = wipeAngle;
 
-  /* Gently auto-center cabin free-look while driving so view stays aligned with the road */
-  if (Math.abs(car.speed) > 0.5) {
-    player.carLookYaw *= Math.exp(-dt * 2.8);
-    player.carLookPitch *= Math.exp(-dt * 2.8);
-  }
-
-  /* Engine vibration, road bump bob & subtle free-look cabin parallax */
+  /* Keep 1P wheeled vehicle dashboard & steering wheel FIXED to the car chassis!
+     Looking left/right/up/down rotates the driver's head without dragging the dash along. */
   const speedShake = Math.sin(gameTime * 28) * 0.0012 * clamp(Math.abs(car.speed) / 15, 0.15, 1.2);
-  const accelPitch = ((keys.KeyW || gamepadState.throttle > 0.1) ? -0.012 : 0) + ((keys.KeyS || gamepadState.brake > 0.1) ? 0.016 : 0);
-  const lookYawParallax = clamp(-player.carLookYaw * 0.35, -0.32, 0.32);
-  const lookPitchParallax = clamp(-player.carLookPitch * 0.45, -0.22, 0.22);
-  carCockpit.group.position.set(
-    lookYawParallax * 0.05,
-    speedShake,
-    0
-  );
-  carCockpit.group.rotation.order = 'YXZ';
-  carCockpit.group.rotation.set(
-    lookPitchParallax + accelPitch,
-    lookYawParallax,
-    -steerInput * 0.015 * speedRatio
-  );
+  const accelPitch = ((keys.KeyW || keys.ArrowUp || gamepadState.throttle > 0.1) ? -0.012 : 0) + ((keys.KeyS || keys.ArrowDown || gamepadState.brake > 0.1) ? 0.016 : 0);
+  const camRoll = -steerInput * 0.016 * clamp(Math.abs(car.speed) / 10, 0, 1);
+  const qHead = new THREE.Quaternion().setFromEuler(new THREE.Euler(clamp(player.carLookPitch, -0.55, 0.65), player.carLookYaw, camRoll, 'YXZ'));
+  const qChassis = qHead.clone().invert();
+  const qTilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(accelPitch, 0, -steerInput * 0.015 * speedRatio, 'YXZ'));
+  carCockpit.group.quaternion.copy(qChassis).multiply(qTilt);
+  carCockpit.group.position.set(0, speedShake, 0);
+  if (Math.abs(weaponCamera.fov - camera.fov) > 0.05) {
+    weaponCamera.fov = camera.fov;
+    weaponCamera.updateProjectionMatrix();
+  }
 
   carCockpit.canvasTimer += dt;
   if (carCockpit.canvasTimer >= 0.08) {
@@ -1960,18 +2073,21 @@ function updateCarCockpitView(dt) {
 function updateWeaponView(dt) {
   /* Strict asset culling: don't show hand pistol inside vehicles with native weapon systems */
   const hasVehWep = !!activeVehicle && hasNativeWeapons(activeVehicle);
-  const aimingInVehicle = !!activeVehicle && !hasVehWep && (player.aiming || pointer.aiming || gamepadState.aim);
-  const show = G.mode === 'playing' && player.cameraMode === '1p' && !!weaponGroups.length && (!activeVehicle || aimingInVehicle);
+  const aimingInVehicle = !!activeVehicle && !hasVehWep && (player.aiming || pointer.aiming || pointer.firing || gamepadState.vehAim || gamepadState.vehFire);
+  const activeWeaponGroups = G.gameMode === 'bf' ? battlefieldWeaponGroups : weaponGroups;
+  const inactiveWeaponGroups = G.gameMode === 'bf' ? weaponGroups : battlefieldWeaponGroups;
+  const show = G.mode === 'playing' && player.cameraMode === '1p' && !!activeWeaponGroups.length && (!activeVehicle || aimingInVehicle);
   weaponRoot.visible = show;
   if (!show) {
     state.recoilPitch *= Math.exp(-dt * 13);
     state.recoilYaw *= Math.exp(-dt * 13);
     return;
   }
-  for (let i = 0; i < weaponGroups.length; i++) weaponGroups[i].visible = i === state.weapon;
-  const g = weaponGroups[state.weapon];
+  for (let i = 0; i < inactiveWeaponGroups.length; i++) inactiveWeaponGroups[i].visible = false;
+  for (let i = 0; i < activeWeaponGroups.length; i++) activeWeaponGroups[i].visible = i === state.weapon;
+  const g = activeWeaponGroups[state.weapon];
   if (!g) return;
-  const w = WEAPONS[state.weapon];
+  const w = getWeaponSpec();
   const ud = g.userData;
   const kick = clamp(state.recoilPitch / Math.max(0.001, w.recoil), 0, 2);
   const reloadProgress = state.reloading ? 1 - clamp(state.reloadTimer / w.reload, 0, 1) : 0;
@@ -4741,10 +4857,10 @@ function getShootTargets() {
 
 function tryShoot() {
   if (G.mode !== 'playing') return;
-  const canShootInVehicle = !!activeVehicle && !hasNativeWeapons(activeVehicle) && (player.aiming || pointer.aiming || gamepadState.aim);
+  const canShootInVehicle = !!activeVehicle && !hasNativeWeapons(activeVehicle);
   if (activeVehicle && !canShootInVehicle) return;
   if (state.reloading) return;
-  const w = WEAPONS[state.weapon];
+  const w = getWeaponSpec();
   if (state.fireTimer > 0) return;
   if (state.ammo[state.weapon] <= 0) {
     startReload();
@@ -5494,7 +5610,7 @@ function applyPlayerDamage(amount) {
 
 function startReload() {
   if (activeVehicle || state.reloading) return;
-  const w = WEAPONS[state.weapon];
+  const w = getWeaponSpec();
   if (state.ammo[state.weapon] >= w.mag) return;
   state.reloading = true;
   state.reloadTimer = w.reload;
@@ -5554,19 +5670,20 @@ function updateWeaponState(dt) {
   state.muzzleTimer = Math.max(0, (state.muzzleTimer || 0) - dt);
   if (state.reloading) {
     state.reloadTimer -= dt;
-    if (!state.reloadClick && state.reloadTimer < WEAPONS[state.weapon].reload * 0.5) {
+    if (!state.reloadClick && state.reloadTimer < getWeaponSpec().reload * 0.5) {
       state.reloadClick = true;
       G.sound.reload(1);
     }
     if (state.reloadTimer <= 0) {
       state.reloading = false;
-      state.ammo[state.weapon] = WEAPONS[state.weapon].mag;
+      state.ammo[state.weapon] = getWeaponSpec().mag;
       G.sound.reload(2);
       updateHUD();
     }
   }
-  const canShootInVehicle = !!activeVehicle && !hasNativeWeapons(activeVehicle) && (player.aiming || pointer.aiming || gamepadState.aim);
-  if ((pointer.firing || gamepadState.fire) && G.mode === 'playing' && (!activeVehicle || canShootInVehicle)) {
+  const canShootInVehicle = !!activeVehicle && !hasNativeWeapons(activeVehicle);
+  const firingInput = activeVehicle ? (pointer.firing || gamepadState.vehFire) : (pointer.firing || gamepadState.fire);
+  if (firingInput && G.mode === 'playing' && (!activeVehicle || canShootInVehicle)) {
     tryShoot();
   }
 }
@@ -5687,6 +5804,10 @@ function exitCar() {
   state.firing = false;
   activeVehicle = null;
   carLight.intensity = 0;
+  if (weaponCamera.fov !== 58) {
+    weaponCamera.fov = 58;
+    weaponCamera.updateProjectionMatrix();
+  }
   G.sound.stopEngine();
   updateHUD();
   updateVehicleReticle();
@@ -5805,24 +5926,68 @@ function fireSelectedVehicleWeapon(v) {
 let vehicleReticleTimer = 0;
 let vehicleReticleRange = '---M';
 let vehicleReticleLocked = false;
+const vehicleWorldPipPos = new THREE.Vector3();
+let vehicleWorldPipValid = false;
+
+function getVehicleMuzzlePos(v, sideSign = 0, isRocket = false) {
+  const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
+  const rx = Math.cos(v.heading), rz = -Math.sin(v.heading);
+  const isGround = !v.type || v.type === 'car' || v.type === 'boat';
+  const sideOff = isRocket
+    ? (isGround ? sideSign * 0.35 : (v.type === 'plane' ? sideSign * 2.8 : sideSign * 1.85))
+    : (isGround ? 0 : (v.type === 'plane' ? sideSign * 2.4 : sideSign * 0.55));
+  const fwdOff = isRocket ? (isGround ? 1.1 : 2.0) : (isGround ? 0.65 : (v.type === 'plane' ? 2.8 : 2.9));
+  const upOff = isRocket ? (isGround ? 2.15 : (v.type === 'plane' ? 0.75 : 0.95)) : (isGround ? (v.type === 'boat' ? 2.05 : 2.15) : (v.type === 'plane' ? 0.85 : 0.55));
+  return new THREE.Vector3(
+    v.x + fx * fwdOff + rx * sideOff,
+    (v.y || 0) + upOff,
+    v.z + fz * fwdOff + rz * sideOff
+  );
+}
+
+function getVehicleAimPoint(v) {
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  /* Start ray slightly ahead of chase camera in 3P so it never clips behind vehicle */
+  const start = camera.position.clone();
+  raycaster.set(start, dir);
+  raycaster.far = 260;
+  const hits = raycaster.intersectObjects(getShootTargets(), false);
+  for (let i = 0; i < hits.length; i++) {
+    const h = hits[i];
+    if (h.object.userData.car === v) continue;
+    /* In 3P, ignore hits behind the vehicle plane */
+    if (player.cameraMode === '3p' && h.distance < 4.5) continue;
+    const isEnemy = (h.object.userData.actor && h.object.userData.actor.alive && h.object.userData.actor.type !== 'ally') ||
+      (h.object.userData.car && !h.object.userData.car.wrecked);
+    return { point: h.point.clone(), dist: h.distance, hit: h, locked: isEnemy };
+  }
+  return { point: start.addScaledVector(dir, 240), dist: 240, hit: null, locked: false };
+}
 
 function updateVehicleReticle() {
   const el = $('vehicle-reticle');
+  const wpEl = $('vr-world-pip');
   if (!el) return;
   const show = G.mode === 'playing' && !!activeVehicle && hasNativeWeapons(activeVehicle);
   el.classList.toggle('hidden', !show);
-  if (!show) return;
+  if (!show) {
+    if (wpEl) wpEl.classList.add('hidden');
+    return;
+  }
 
   const v = activeVehicle;
   const list = ensureVehicleWeapons(v);
   const idx = v.weaponIndex || 0;
   const spec = list[idx];
   const reloading = v.weaponReload[idx] > 0;
+  const is3p = player.cameraMode === '3p';
 
   el.classList.toggle('mode-gun', spec.reticle === 'gun');
   el.classList.toggle('mode-missile', spec.reticle === 'missile');
   el.classList.toggle('vr-locked', vehicleReticleLocked);
   el.classList.toggle('vr-firing', (v.reticleKick || 0) > 0.02);
+  el.classList.toggle('is-3p', is3p);
 
   const tagEl = $('vr-tag');
   const ammoEl = $('vr-ammo');
@@ -5835,6 +6000,26 @@ function updateVehicleReticle() {
   }
   if (rangeEl) {
     rangeEl.textContent = vehicleReticleRange;
+  }
+
+  /* 3P True 3D Muzzle Impact Pipper projected directly onto screen coordinates */
+  if (wpEl) {
+    if (is3p && vehicleWorldPipValid) {
+      const proj = vehicleWorldPipPos.clone().project(camera);
+      if (proj.z > -1 && proj.z < 1) {
+        const sx = clamp((proj.x * 0.5 + 0.5) * 100, 5, 95);
+        const sy = clamp((-proj.y * 0.5 + 0.5) * 100, 5, 95);
+        wpEl.style.left = sx.toFixed(2) + '%';
+        wpEl.style.top = sy.toFixed(2) + '%';
+        wpEl.classList.remove('hidden');
+        wpEl.classList.toggle('mode-missile', spec.reticle === 'missile');
+        wpEl.classList.toggle('vr-locked', vehicleReticleLocked);
+      } else {
+        wpEl.classList.add('hidden');
+      }
+    } else {
+      wpEl.classList.add('hidden');
+    }
   }
 }
 
@@ -5855,29 +6040,35 @@ function updateVehicleWeapons(dt, v) {
       }
     }
   }
-  if (pointer.firing && v === activeVehicle) {
+  if ((pointer.firing || gamepadState.vehFire) && v === activeVehicle) {
     fireSelectedVehicleWeapon(v);
   }
   vehicleReticleTimer -= dt;
   if (vehicleReticleTimer <= 0 && v === activeVehicle) {
-    vehicleReticleTimer = 0.06;
-    const dir = new THREE.Vector3();
-    camera.getWorldDirection(dir);
-    raycaster.set(camera.position, dir);
-    raycaster.far = 260;
-    const hits = raycaster.intersectObjects(getShootTargets(), false);
-    vehicleReticleLocked = false;
-    vehicleReticleRange = '---M';
-    for (let i = 0; i < hits.length; i++) {
-      const h = hits[i];
-      if (h.object.userData.car === v) continue;
-      vehicleReticleRange = Math.round(h.distance) + 'M';
-      if (h.object.userData.actor && h.object.userData.actor.alive && h.object.userData.actor.type !== 'ally') {
-        vehicleReticleLocked = true;
-      } else if (h.object.userData.car && !h.object.userData.car.wrecked) {
-        vehicleReticleLocked = true;
+    vehicleReticleTimer = 0.045;
+    const aim = getVehicleAimPoint(v);
+    vehicleReticleLocked = aim.locked;
+    vehicleReticleRange = aim.hit ? (Math.round(aim.dist) + 'M') : '---M';
+    if (player.cameraMode === '3p') {
+      const muzzle = getVehicleMuzzlePos(v, 0, list[v.weaponIndex || 0].kind === 'rocket');
+      const mDir = aim.point.clone().sub(muzzle).normalize();
+      raycaster.set(muzzle, mDir);
+      raycaster.far = 260;
+      const mHits = raycaster.intersectObjects(getShootTargets(), false);
+      let mEnd = aim.point;
+      for (let i = 0; i < mHits.length; i++) {
+        if (mHits[i].object.userData.car === v) continue;
+        mEnd = mHits[i].point;
+        if ((mHits[i].object.userData.actor && mHits[i].object.userData.actor.alive && mHits[i].object.userData.actor.type !== 'ally') ||
+            (mHits[i].object.userData.car && !mHits[i].object.userData.car.wrecked)) {
+          vehicleReticleLocked = true;
+        }
+        break;
       }
-      break;
+      vehicleWorldPipPos.copy(mEnd);
+      vehicleWorldPipValid = true;
+    } else {
+      vehicleWorldPipValid = false;
     }
   }
   if (v === activeVehicle) updateVehicleReticle();
@@ -5888,30 +6079,25 @@ function fireAircraftCannon(v, spec) {
   const s = spec || (getVehicleWeapons(v) || VEHICLE_WEAPONS.heli)[0];
   v.cannonSide = -(v.cannonSide || 1);
 
+  const muzzle = getVehicleMuzzlePos(v, v.cannonSide, false);
+  const aim = getVehicleAimPoint(v);
   const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
+  if (player.cameraMode === '3p') {
+    dir.copy(aim.point).sub(muzzle).normalize();
+  } else {
+    camera.getWorldDirection(dir);
+  }
   const sp = s.spread || 0.012;
   dir.x += rand(-sp, sp);
   dir.y += rand(-sp, sp);
   dir.z += rand(-sp, sp);
   dir.normalize();
 
-  const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
-  const rx = Math.cos(v.heading), rz = -Math.sin(v.heading);
-  const isGround = !v.type || v.type === 'car' || v.type === 'boat';
-  const sideOff = isGround ? 0 : (v.type === 'plane' ? v.cannonSide * 2.4 : v.cannonSide * 0.55);
-  const fwdOff = isGround ? 0.65 : (v.type === 'plane' ? 2.8 : 2.9);
-  const upOff = isGround ? (v.type === 'boat' ? 2.05 : 2.15) : (v.type === 'plane' ? 0.85 : 0.55);
-  const muzzle = new THREE.Vector3(
-    v.x + fx * fwdOff + rx * sideOff,
-    (v.y || 0) + upOff,
-    v.z + fz * fwdOff + rz * sideOff
-  );
-
-  raycaster.set(camera.position, dir);
+  const rayOrigin = player.cameraMode === '3p' ? muzzle : camera.position;
+  raycaster.set(rayOrigin, dir);
   raycaster.far = 260;
   const hits = raycaster.intersectObjects(getShootTargets(), false);
-  let end = camera.position.clone().addScaledVector(dir, 260);
+  let end = rayOrigin.clone().addScaledVector(dir, 260);
   let hit = null;
   for (let i = 0; i < hits.length; i++) {
     if (hits[i].object.userData.car === v) continue;
@@ -5952,21 +6138,15 @@ function fireAircraftRocket(v, spec) {
   const s = spec || (getVehicleWeapons(v) || VEHICLE_WEAPONS.heli)[1];
   v.rocketSide = -(v.rocketSide || 1);
 
+  const start = getVehicleMuzzlePos(v, v.rocketSide, true);
   const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  dir.normalize();
-
-  const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
-  const rx = Math.cos(v.heading), rz = -Math.sin(v.heading);
-  const isGround = !v.type || v.type === 'car' || v.type === 'boat';
-  const sideOff = isGround ? v.rocketSide * 0.35 : (v.type === 'plane' ? v.rocketSide * 2.8 : v.rocketSide * 1.85);
-  const fwdOff = isGround ? 1.1 : 2.0;
-  const upOff = isGround ? 2.15 : (v.type === 'plane' ? 0.75 : 0.95);
-  const start = new THREE.Vector3(
-    v.x + fx * fwdOff + rx * sideOff,
-    (v.y || 0) + upOff,
-    v.z + fz * fwdOff + rz * sideOff
-  );
+  if (player.cameraMode === '3p') {
+    const aim = getVehicleAimPoint(v);
+    dir.copy(aim.point).sub(start).normalize();
+  } else {
+    camera.getWorldDirection(dir);
+    dir.normalize();
+  }
 
   const mesh = new THREE.Mesh(
     new THREE.CylinderGeometry(0.08, 0.09, 0.95, 6),
@@ -6286,9 +6466,9 @@ function updateDrivenCar(dt) {
   if (v.type === 'plane') { updateDrivenPlane(dt, v); return; }
   if (v.type === 'boat') { updateDrivenBoat(dt, v); return; }
   const car = activeVehicle;
-  const throttle = Math.max(keys.KeyW ? 1 : 0, gamepadState.throttle);
-  const brake = Math.max(keys.KeyS ? 1 : 0, gamepadState.brake);
-  const kbSteer = (keys.KeyA ? 1 : 0) - (keys.KeyD ? 1 : 0);
+  const throttle = Math.max((keys.KeyW || keys.ArrowUp) ? 1 : 0, gamepadState.throttle);
+  const brake = Math.max((keys.KeyS || keys.ArrowDown) ? 1 : 0, gamepadState.brake);
+  const kbSteer = ((keys.KeyA || keys.ArrowLeft) ? 1 : 0) - ((keys.KeyD || keys.ArrowRight) ? 1 : 0);
   const steer = clamp(kbSteer + gamepadState.steer, -1, 1);
   const handbrake = (keys.Space || gamepadState.jump) ? 1 : 0;
   const boosting = (keys.ShiftLeft || keys.ShiftRight || gamepadState.sprint) && throttle > 0.1;
@@ -7384,8 +7564,11 @@ function pollGamepad(dt) {
 
   const ltVal = val(6);
   const rtVal = val(7);
-  gamepadState.aim = ltVal > 0.25;
-  gamepadState.fire = rtVal > 0.35;
+  /* In vehicles: RT = accelerate, LT = brake/reverse, Left Stick = steer, RB = fire weapon, LB = optic/aim! */
+  gamepadState.aim = activeVehicle ? btn(4) : (ltVal > 0.25);
+  gamepadState.fire = activeVehicle ? btn(5) : (rtVal > 0.35);
+  gamepadState.vehAim = btn(4);
+  gamepadState.vehFire = btn(5);
   gamepadState.throttle = rtVal;
   gamepadState.brake = ltVal;
   gamepadState.jump = btn(0); // A
@@ -7394,18 +7577,20 @@ function pollGamepad(dt) {
 
   /* Right stick camera look */
   if (G.mode === 'playing' && (Math.abs(rx) > 0.001 || Math.abs(ry) > 0.001)) {
-    const lookSpeed = pointer.sensitivity * 2.55 * (player.aiming ? 0.58 : 1.0);
+    const lookSpeed = pointer.sensitivity * 2.55 * ((player.aiming || gamepadState.vehAim) ? 0.58 : 1.0);
     if (activeVehicle) {
       player.carLookYaw = clamp(player.carLookYaw - rx * lookSpeed * dt, -2.5, 2.5);
-      player.carLookPitch = clamp(player.carLookPitch - ry * lookSpeed * dt, -0.4, 0.4);
+      player.carLookPitch = clamp(player.carLookPitch - ry * lookSpeed * dt, -0.55, 0.65);
     } else {
       player.yaw -= rx * lookSpeed * dt;
       player.pitch = clamp(player.pitch - ry * lookSpeed * dt, -1.38, 1.38);
     }
   }
 
-  /* LB / RB: Lean when aiming, otherwise switch weapon */
-  if (gamepadState.aim && !activeVehicle) {
+  /* LB / RB: Lean when aiming on foot, switch weapon on foot; in vehicles RB/LB fire/aim, D-Pad L/R switches vehicle weapon */
+  if (activeVehicle) {
+    gamepadState.lean = 0;
+  } else if (gamepadState.aim) {
     gamepadState.lean = (btn(5) ? 1 : 0) - (btn(4) ? 1 : 0);
   } else {
     gamepadState.lean = 0;
@@ -7423,12 +7608,21 @@ function pollGamepad(dt) {
     resumeGame();
   } else if (G.mode === 'playing') {
     if (justPressed(1) || justPressed(11)) toggleCrouch(); // B or R3
-    if (justPressed(2)) startReload(); // X
+    if (justPressed(2)) {
+      if (activeVehicle && hasNativeWeapons(activeVehicle)) reloadVehicleWeapon(activeVehicle);
+      else startReload();
+    } // X
     if (justPressed(3)) { if (activeVehicle || nearestCar) handleVehicleKey(); else interact(); } // Y
     if (justPressed(12)) toggleFlashlight(); // D-Pad Up
     if (justPressed(13)) toggleCameraMode(); // D-Pad Down
-    if (justPressed(14)) cycleZoom(-1); // D-Pad Left
-    if (justPressed(15)) cycleZoom(1); // D-Pad Right
+    if (justPressed(14)) {
+      if (activeVehicle && hasNativeWeapons(activeVehicle)) switchVehicleWeapon(0);
+      else cycleZoom(-1);
+    } // D-Pad Left
+    if (justPressed(15)) {
+      if (activeVehicle && hasNativeWeapons(activeVehicle)) switchVehicleWeapon(1);
+      else cycleZoom(1);
+    } // D-Pad Right
     if (justPressed(9)) pauseGame(); // Start
     if (justPressed(8) && KC.multiplayer) KC.multiplayer.toggleVoiceMode(); // Back/Select
   }
@@ -7612,7 +7806,7 @@ function updatePlayer(dt) {
     if (show3P) {
       playerRig.group.position.set(player.pos.x, player.pos.y + 0.14, player.pos.z);
       playerRig.group.rotation.y = player.yaw;
-      const w = WEAPONS[state.weapon];
+      const w = getWeaponSpec();
       const recoilKick = clamp(state.recoilPitch / Math.max(0.001, w.recoil), 0, 1.8);
       const reloadProgress = state.reloading ? (1 - clamp(state.reloadTimer / w.reload, 0, 1)) : 0;
       KC.applyCharacterPose(playerRig, {
@@ -7722,14 +7916,14 @@ function updateCameraHeli(dt, v) {
     camera.rotation.order = 'YXZ';
     camera.rotation.set(clamp(camPitch + (v.pitch || 0) * 0.75 - 0.04, -0.85, 0.85), camYaw, (v.roll || 0) * 0.65);
   } else {
-    /* 3rd-Person Chase Camera behind Helicopter */
+    /* 3rd-Person Chase Camera behind Helicopter (elevated cleanly so center crosshair clears rotor/tail) */
     const backX = Math.sin(camYaw), backZ = Math.cos(camYaw);
-    const dist = 11.2 + clamp(Math.abs(v.speed) / 14, 0, 2.2);
-    camera.position.set(v.x + backX * dist, Math.max(1.2, v.y + 4.4 - camPitch * 4.5), v.z + backZ * dist);
-    camera.lookAt(v.x - backX * 4.0, v.y + 1.2 + camPitch * 3.0, v.z - backZ * 4.0);
+    const dist = 11.4 + clamp(Math.abs(v.speed) / 14, 0, 2.2);
+    camera.position.set(v.x + backX * dist, Math.max(1.5, v.y + 5.1 - camPitch * 4.5), v.z + backZ * dist);
+    camera.lookAt(v.x - backX * 14.0, v.y + 2.1 + camPitch * 9.0, v.z - backZ * 14.0);
     camera.rotation.order = 'YXZ';
   }
-  const opticZoom = pointer.aiming ? 0.58 : 1.0;
+  const opticZoom = (pointer.aiming || gamepadState.vehAim) ? 0.58 : 1.0;
   const targetFov = (player.cameraMode === '3p' ? 78 : 76) * opticZoom;
   if (Math.abs(camera.fov - targetFov) > 0.05) { camera.fov = lerp(camera.fov, targetFov, 1 - Math.exp(-dt * 9)); camera.updateProjectionMatrix(); }
   carLight.intensity = 0;
@@ -7745,14 +7939,14 @@ function updateCameraPlane(dt, v) {
     camera.rotation.order = 'YXZ';
     camera.rotation.set(camPitch, camYaw, (v.roll || 0) * 0.85);
   } else {
-    /* 3rd-Person Fighter Chase Camera */
+    /* 3rd-Person Fighter Chase Camera (elevated over tail for crisp forward gunnery) */
     const backX = Math.sin(camYaw), backZ = Math.cos(camYaw);
     const dist = 13.8 + clamp(v.speed / 16, 0, 3.2);
-    camera.position.set(v.x + backX * dist, Math.max(1.8, v.y + 4.6 - (v.pitch || 0) * 5.0), v.z + backZ * dist);
-    camera.lookAt(v.x - backX * 6.0, v.y + 1.2 + (v.pitch || 0) * 5.0, v.z - backZ * 6.0);
+    camera.position.set(v.x + backX * dist, Math.max(2.0, v.y + 5.2 - (v.pitch || 0) * 5.0), v.z + backZ * dist);
+    camera.lookAt(v.x - backX * 18.0, v.y + 2.2 + (v.pitch || 0) * 14.0, v.z - backZ * 18.0);
     camera.rotation.order = 'YXZ';
   }
-  const opticZoom = pointer.aiming ? 0.58 : 1.0;
+  const opticZoom = (pointer.aiming || gamepadState.vehAim) ? 0.58 : 1.0;
   const targetFov = (player.cameraMode === '3p' ? 80 : 75) * opticZoom;
   if (Math.abs(camera.fov - targetFov) > 0.05) { camera.fov = lerp(camera.fov, targetFov, 1 - Math.exp(-dt * 9)); camera.updateProjectionMatrix(); }
   carLight.intensity = 0;
@@ -7770,11 +7964,11 @@ function updateCameraBoat(dt, v) {
   } else {
     const backX = Math.sin(camYaw), backZ = Math.cos(camYaw);
     const dist = 9.5;
-    camera.position.set(v.x + backX * dist, v.y + 3.8, v.z + backZ * dist);
-    camera.lookAt(v.x - backX * 3.0, v.y + 1.1, v.z - backZ * 3.0);
+    camera.position.set(v.x + backX * dist, v.y + 4.35, v.z + backZ * dist);
+    camera.lookAt(v.x - backX * 12.0, v.y + 1.85 + camPitch * 8.0, v.z - backZ * 12.0);
     camera.rotation.order = 'YXZ';
   }
-  const opticZoom = pointer.aiming ? 0.62 : 1.0;
+  const opticZoom = (pointer.aiming || gamepadState.vehAim) ? 0.62 : 1.0;
   const targetFov = 78 * opticZoom;
   if (Math.abs(camera.fov - targetFov) > 0.05) { camera.fov = lerp(camera.fov, targetFov, 1 - Math.exp(-dt * 9)); camera.updateProjectionMatrix(); }
   carLight.intensity = 0;
@@ -7790,10 +7984,10 @@ function updateCameraCar(dt) {
   const shake = player.shake;
   const sx = (Math.random() - 0.5) * shake * 0.02;
   const sy = (Math.random() - 0.5) * shake * 0.02;
-  const steer = (keys.KeyA ? 1 : 0) - (keys.KeyD ? 1 : 0) + gamepadState.steer;
+  const steer = ((keys.KeyA || keys.ArrowLeft) ? 1 : 0) - ((keys.KeyD || keys.ArrowRight) ? 1 : 0) + gamepadState.steer;
 
   const camYaw = car.heading + player.carLookYaw;
-  const camPitch = clamp(player.carLookPitch + (Math.random() - 0.5) * shake * 0.02, -0.45, 0.45);
+  const camPitch = clamp(player.carLookPitch + (Math.random() - 0.5) * shake * 0.02, -0.55, 0.65);
 
   if (player.cameraMode === '1p') {
     const isTall = car.style === 'humvee' || car.style === 'suv' || car.style === 'van' || car.style === 'armored';
@@ -7803,15 +7997,15 @@ function updateCameraCar(dt) {
     camera.rotation.order = 'YXZ';
     camera.rotation.set(camPitch, camYaw, -steer * 0.016 * clamp(Math.abs(car.speed) / 10, 0, 1));
   } else {
-    /* 3rd-Person Chase Camera behind vehicle */
+    /* 3rd-Person Chase Camera behind vehicle (elevated above roof for crisp aiming) */
     const backX = Math.sin(camYaw), backZ = Math.cos(camYaw);
-    const dist = 6.4 + clamp(Math.abs(car.speed) / 12, 0, 1.5);
-    camera.position.set(car.x + backX * dist + sx, 2.65 + sy, car.z + backZ * dist);
-    camera.lookAt(car.x - backX * 2.5, 1.15 + camPitch * 2, car.z - backZ * 2.5);
+    const dist = 6.5 + clamp(Math.abs(car.speed) / 12, 0, 1.5);
+    camera.position.set(car.x + backX * dist + sx, 3.05 + sy, car.z + backZ * dist);
+    camera.lookAt(car.x - backX * 12.0, 1.85 + camPitch * 8.0, car.z - backZ * 12.0);
     camera.rotation.order = 'YXZ';
   }
 
-  const opticZoom = (pointer.aiming && hasNativeWeapons(car)) ? 0.62 : 1.0;
+  const opticZoom = ((pointer.aiming || gamepadState.vehAim) && hasNativeWeapons(car)) ? 0.62 : ((pointer.aiming || gamepadState.vehAim) ? 0.78 : 1.0);
   const targetFov = 80 * opticZoom;
   if (Math.abs(camera.fov - targetFov) > 0.05) {
     camera.fov = lerp(camera.fov, targetFov, 1 - Math.exp(-dt * 9));
@@ -8281,7 +8475,7 @@ function updateHUD() {
   updateWantedUI();
   updateClock();
 
-  const weapon = WEAPONS[state.weapon];
+  const weapon = getWeaponSpec();
   if ($('weapon-slot')) $('weapon-slot').textContent = weapon.slot;
   if ($('weapon-name')) $('weapon-name').textContent = weapon.name;
   if ($('ammo')) $('ammo').textContent = String(state.ammo[state.weapon]);
@@ -8291,6 +8485,11 @@ function updateHUD() {
   if ($('slot-2')) $('slot-2').classList.toggle('active', state.weapon === 1);
   if ($('slot-3')) $('slot-3').classList.toggle('active', state.weapon === 2);
   if ($('slot-4')) $('slot-4').classList.toggle('active', state.weapon === 3);
+  const slotNames = G.gameMode === 'bf' ? ['1·M1911', '2·M4A1', '3·AK-47', '4·M24'] : ['1·PISTOL', '2·CARBINE', '3·SHOTGUN', '4·SNIPER'];
+  for (let i = 0; i < slotNames.length; i++) {
+    const slot = $('slot-' + (i + 1));
+    if (slot) slot.textContent = slotNames[i];
+  }
   const reloadHint = $('reload-hint');
   if (reloadHint) {
     reloadHint.classList.toggle('reloading', state.reloading);
@@ -8329,8 +8528,10 @@ function updateHUD() {
 
   const crosshair = $('crosshair');
   if (crosshair) {
-    crosshair.classList.toggle('hidden-cross', !!activeVehicle);
-    const gap = player.aiming ? 4 : (player.crouching ? 6 : 9);
+    /* Show personal weapon crosshair on foot AND inside unarmed wheeled vehicles (armed vehicles use #vehicle-reticle) */
+    const hideCross = !!activeVehicle && hasNativeWeapons(activeVehicle);
+    crosshair.classList.toggle('hidden-cross', hideCross);
+    const gap = (player.aiming || pointer.aiming) ? 4 : (player.crouching ? 6 : 9);
     crosshair.style.setProperty('--gap', gap + 'px');
   }
   updateVehicleReticle();
@@ -8896,7 +9097,7 @@ function spawnAtBase(base) {
   state.weapon = cls.weapon;
   player.attachments = cls.attachments.slice();
   const extBonus = player.attachments.indexOf('extmag') !== -1 ? 1.5 : 1.0;
-  state.ammo = WEAPONS.map((w) => Math.round(w.mag * extBonus));
+  state.ammo = BF_WEAPONS.map((w) => Math.round(w.mag * extBonus));
   state.damageTimer = 99;
   state.damageFlash = 0;
   state.firing = false;
@@ -9563,7 +9764,7 @@ function wireUI() {
       activeVehicle.mousePitch = clamp((activeVehicle.mousePitch || 0) - e.movementY * sens * 2.1, -1.0, 1.0);
     } else if (activeVehicle) {
       player.carLookYaw = clamp(player.carLookYaw - e.movementX * sens, -2.5, 2.5);
-      player.carLookPitch = clamp(player.carLookPitch - e.movementY * sens, -0.4, 0.4);
+      player.carLookPitch = clamp(player.carLookPitch - e.movementY * sens, -0.55, 0.65);
     } else {
       player.yaw -= e.movementX * sens;
       player.pitch = clamp(player.pitch - e.movementY * sens, -1.38, 1.38);

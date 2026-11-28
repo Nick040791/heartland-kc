@@ -235,6 +235,29 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   white-space: nowrap; font-size: 9px; letter-spacing: 0.14em;
   color: rgba(242, 232, 213, 0.9); text-shadow: 0 1px 3px #000;
 }
+/* 3rd-Person Vehicle Reticle refinement: subtle outer command reticle + live 3D impact pipper */
+.vehicle-reticle.is-3p .vr-ring { opacity: 0.48; border-style: dashed; }
+.vehicle-reticle.is-3p .vr-tick { opacity: 0.65; }
+.vr-world-pip {
+  position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+  pointer-events: none; z-index: 13;
+  --wp-color: #63f5b2;
+}
+.vr-world-pip.hidden { display: none; }
+.vr-world-pip.mode-missile { --wp-color: #ffb84d; }
+.vr-world-pip.vr-locked { --wp-color: #ff4747; }
+.vr-wp-ring {
+  position: absolute; left: -11px; top: -11px; width: 22px; height: 22px;
+  border-radius: 50%; border: 2px solid var(--wp-color);
+  box-shadow: 0 0 8px rgba(0,0,0,0.9), 0 0 6px var(--wp-color);
+}
+.vr-world-pip.mode-missile .vr-wp-ring {
+  border-radius: 0; transform: rotate(45deg); left: -10px; top: -10px; width: 20px; height: 20px;
+}
+.vr-wp-dot {
+  position: absolute; left: -2px; top: -2px; width: 4px; height: 4px;
+  background: #fff; box-shadow: 0 0 5px var(--wp-color), 0 0 3px #000;
+}
 
 .vehicle-weapons {
   margin-top: 8px; padding: 6px 8px;

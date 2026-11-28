@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0a0a0d">
   <title>HEARTLAND 26 — Kansas City Multiplayer Open-World Sandbox</title>
-  <link rel="stylesheet" href="css/style.css?v=20261128g">
+  <link rel="stylesheet" href="css/style.css?v=20261128j">
 </head>
 <body>
   <div id="app">
@@ -98,6 +98,11 @@
         <span class="vr-pip"></span>
         <div class="vr-tag" id="vr-tag">30MM CHAIN GUN</div>
         <div class="vr-meta"><span id="vr-ammo">60/60</span> · <span id="vr-range">---M</span></div>
+      </div>
+
+      <div id="vr-world-pip" class="vr-world-pip hidden" aria-hidden="true">
+        <span class="vr-wp-ring"></span>
+        <span class="vr-wp-dot"></span>
       </div>
 
       <div id="vehicle-prompt" class="vehicle-prompt hidden"><span class="key">F</span> ENTER VEHICLE</div>
@@ -469,10 +474,10 @@
           <div class="deploy-side-col">
             <div class="deploy-section-label">COMBAT CLASS</div>
             <div id="bf-class-list" class="bf-class-grid">
-              <button class="btn btn-secondary bf-class-btn active" data-class="assault">ASSAULT<small>Carbine · Grip</small></button>
-              <button class="btn btn-secondary bf-class-btn" data-class="recon">RECON<small>Sniper · Scope+Sil</small></button>
-              <button class="btn btn-secondary bf-class-btn" data-class="breacher">BREACHER<small>Shotgun · 4 Frag</small></button>
-              <button class="btn btn-secondary bf-class-btn" data-class="support">SUPPORT<small>100 Armor · ExtMag</small></button>
+              <button class="btn btn-secondary bf-class-btn active" data-class="assault">ASSAULT<small>M4A1 · Grip</small></button>
+              <button class="btn btn-secondary bf-class-btn" data-class="recon">RECON<small>M24 · Scope+Sil</small></button>
+              <button class="btn btn-secondary bf-class-btn" data-class="breacher">BREACHER<small>AK-47 · 4 Frag</small></button>
+              <button class="btn btn-secondary bf-class-btn" data-class="support">SUPPORT<small>M4A1 · ExtMag</small></button>
             </div>
             <div class="deploy-section-label" style="margin-top:10px;">CONTROLLED SECTORS</div>
             <div id="spawn-list" class="spawn-list-grid"></div>
@@ -516,11 +521,11 @@
 
   <script src="vendor/three.min.js"></script>
   <script src="vendor/peerjs.min.js"></script>
-  <script src="js/audio.js?v=20261128h"></script>
-  <script src="js/world.js?v=20261128h"></script>
-  <script src="js/landmarks.js?v=20261128h"></script>
-  <script src="js/props.js?v=20261128h"></script>
-  <script src="js/multiplayer.js?v=20261128h"></script>
-  <script src="js/game.js?v=20261128h"></script>
+  <script src="js/audio.js?v=20261128j"></script>
+  <script src="js/world.js?v=20261128j"></script>
+  <script src="js/landmarks.js?v=20261128j"></script>
+  <script src="js/props.js?v=20261128j"></script>
+  <script src="js/multiplayer.js?v=20261128j"></script>
+  <script src="js/game.js?v=20261128j"></script>
 </body>
 </html>
