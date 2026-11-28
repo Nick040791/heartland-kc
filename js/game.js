@@ -3596,8 +3596,10 @@ function updateAllies(dt) {
       a.group.rotation.y = a.heading;
       if (bestD > 26) {
         const dx = (tp.x - pos.x) / bestD, dz = (tp.z - pos.z) / bestD;
-        const step = steerAroundObstacles(pos.x, pos.z, dx, dz, a.speed * dt);
-        pos.x = step.x; pos.z = step.z; moving = true;
+        const dir = steerDirectionWhiskers(pos.x, pos.z, dx, dz, 1.65);
+        pos.x += dir.x * a.speed * dt;
+        pos.z += dir.z * a.speed * dt;
+        moving = true;
       } else {
         a.strafeTimer -= dt;
         if (a.strafeTimer <= 0) { a.strafe *= -1; a.strafeTimer = rand(1.6, 3.0); }
@@ -3610,7 +3612,7 @@ function updateAllies(dt) {
         }
       }
       a.fireTimer -= dt;
-      if (a.fireTimer <= 0 && bestD < 58 && hasLineOfSight(pos.x, 1.5, pos.z, tp.x, 1.35, tp.z)) {
+      if (a.fireTimer <= 0 && bestD < 58 && hasLineOfSight(new THREE.Vector3(pos.x, 1.5, pos.z), new THREE.Vector3(tp.x, 1.35, tp.z))) {
         a.fireTimer = a.shootCooldown;
         const from = new THREE.Vector3(pos.x, 1.45, pos.z);
         const to = new THREE.Vector3(tp.x + rand(-0.4, 0.4), 1.35 + rand(-0.3, 0.3), tp.z + rand(-0.4, 0.4));
@@ -3631,10 +3633,12 @@ function updateAllies(dt) {
       const zd = dist2(pos.x, pos.z, a.targetZone.x, a.targetZone.z);
       if (zd > 8) {
         const dx = (a.targetZone.x - pos.x) / zd, dz = (a.targetZone.z - pos.z) / zd;
-        a.heading = Math.atan2(-dx, -dz);
+        const dir = steerDirectionWhiskers(pos.x, pos.z, dx, dz, 1.65);
+        a.heading = Math.atan2(-dir.x, -dir.z);
         a.group.rotation.y = a.heading;
-        const step = steerAroundObstacles(pos.x, pos.z, dx, dz, a.speed * dt);
-        pos.x = step.x; pos.z = step.z; moving = true;
+        pos.x += dir.x * a.speed * dt;
+        pos.z += dir.z * a.speed * dt;
+        moving = true;
       }
     }
     const res = resolveCircleWorld(pos.x, pos.z, 0.38, true);
@@ -7449,6 +7453,7 @@ function spawnAtBase(base) {
   showBanner('DEPLOYED // ' + cls.name, (base.code ? '[' + base.code + '] ' : '') + base.name + ' SECTOR');
   notify('BATTLEFIELD', cls.name + ' DEPLOYED AT ' + base.name, 'money');
   G.sound.ui();
+  if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
   requestLock();
 }
 
