@@ -535,22 +535,13 @@ KC.buildProps = function (city, blockData) {
   addHydrant(-46.2, 14.0);
   addBench(9, 16, -0.4);
 
-  /* ---------------- Missouri River / north edge (Textured & Animated Ripples + River Barge) ---------------- */
-  const waterMat = new THREE.MeshStandardMaterial({
-    color: 0x16384c,
-    map: materials.waterTex ? materials.waterTex.map : null,
-    bumpMap: materials.waterTex ? materials.waterTex.bumpMap : null,
-    bumpScale: 0.055,
-    roughness: 0.18,
-    metalness: 0.72,
-    emissive: 0x061520,
-    emissiveIntensity: 0.38
-  });
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(680, 260), waterMat);
-  water.rotation.x = -Math.PI / 2;
-  water.position.set(0, -0.42, -300);
+  /* ---------------- Missouri River / north edge (Animated GLSL Water Shader + River Barge) ---------------- */
+  const waterObj = KC.createWaterSurface(680, 290, { shoreAxis: 'z', shoreEdge: -194 });
+  const water = waterObj.mesh;
+  water.position.set(0, -0.22, -338);
   scene.add(water);
   city.water = water;
+  city.waterUniforms = waterObj.uniforms;
 
   /* Missouri River Cargo Barge & Tugboat gliding east/west */
   {
@@ -568,15 +559,11 @@ KC.buildProps = function (city, blockData) {
     const mastLight = new THREE.Mesh(new THREE.SphereGeometry(0.22, 6, 4), bulbMat);
     mastLight.position.set(-5.8, 4.1, 0);
     barge.add(hull, deck, cabinB, cargo1, cargo2, mastLight);
-    barge.position.set(-40, -0.35, -260);
+    barge.position.set(-40, -0.25, -278);
     scene.add(barge);
 
     city.updaters.push((t) => {
-      if (materials.waterTex && materials.waterTex.map) {
-        materials.waterTex.map.offset.x = (t * 0.035) % 1;
-        materials.waterTex.map.offset.y = Math.sin(t * 0.25) * 0.04;
-        materials.waterTex.bumpMap.offset.x = (t * 0.035) % 1;
-      }
+      waterObj.uniforms.uTime.value = t;
       barge.position.x = Math.sin(t * 0.045) * 145;
       barge.rotation.y = Math.cos(t * 0.045) >= 0 ? 0 : Math.PI;
     });
@@ -765,20 +752,41 @@ KC.buildProps = function (city, blockData) {
       scene.add(m);
     }
   }
-  /* Marina dock */
+  /* Walkable Berkley Riverfront Marina Piers (NO blocking box collider so players walk right up to board boats!) */
   {
-    const dock = new THREE.Mesh(new THREE.BoxGeometry(6, 0.3, 24), new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.9 }));
-    dock.position.set(40, -0.1, -235);
-    scene.add(dock);
-    addCollider(40, -235, 6, 24, 0.5, 'prop');
+    const pierWood = materials.benchWoodMat || new THREE.MeshStandardMaterial({ color: 0x5c4430, roughness: 0.92, flatShading: true });
+    for (const px of [40, -56]) {
+      const dock = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.32, 30), pierWood);
+      dock.position.set(px, 0.06, -208);
+      dock.receiveShadow = true;
+      scene.add(dock);
+      city.rayMeshes.push(dock);
+      /* Pilings & dock lantern posts */
+      for (let dz = -196; dz >= -222; dz -= 8) {
+        for (const sx of [-3.2, 3.2]) {
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 2.4, 6), pierWood);
+          post.position.set(px + sx, -0.75, dz);
+          scene.add(post);
+        }
+      }
+      const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.24, 6, 4), bulbMat);
+      lantern.position.set(px, 1.8, -221.5);
+      scene.add(lantern);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.7, 6), materials.darkMetal);
+      pole.position.set(px, 0.9, -221.5);
+      scene.add(pole);
+    }
   }
 
   city.vehicleSpots = city.vehicleSpots || [];
   city.vehicleSpots.push({ type: 'heli', x: -100, z: -100, heading: Math.PI / 4, color: 0x2b4b7a, kind: 'parked' });
   city.vehicleSpots.push({ type: 'plane', x: 120, z: -150, heading: 0, color: 0xd8d0c0, kind: 'parked' });
   city.vehicleSpots.push({ type: 'plane', x: -90, z: 120, heading: Math.PI, color: 0xc9c0b0, kind: 'parked' });
-  city.vehicleSpots.push({ type: 'boat', x: 40, z: -235, heading: 0, color: 0xd8d0c0, kind: 'parked' });
-  city.vehicleSpots.push({ type: 'boat', x: -60, z: -245, heading: Math.PI / 2, color: 0x2b4b7a, kind: 'parked' });
+  /* Playable Missouri River Watercraft moored right beside the Berkley Marina Piers */
+  city.vehicleSpots.push({ type: 'boat', boatKind: 'speedboat', x: 46, z: -210, heading: Math.PI / 2, color: 0xd94638, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'boat', boatKind: 'gunboat', x: 34, z: -218, heading: 0, color: 0x243b5a, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'boat', boatKind: 'speedboat', x: -50, z: -210, heading: -Math.PI / 2, color: 0xdfd8c8, kind: 'parked' });
+  city.vehicleSpots.push({ type: 'boat', boatKind: 'gunboat', x: -62, z: -218, heading: 0, color: 0x3b4d3e, kind: 'parked' });
 
   /* ---------------- extended district labels ---------------- */
   city.mapData = {

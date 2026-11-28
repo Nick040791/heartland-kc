@@ -429,6 +429,111 @@ KC.scaleBoxUV = function (geo, w, h, d, unit = KC.WINDOW_UNIT) {
   uv.needsUpdate = true;
 };
 
+/* ============================================================
+   Animated PS1 / Tactical Water Shader (Missouri River)
+   Multi-wave ripples, Fresnel sky reflection, sun glint & shore foam
+   ============================================================ */
+KC.createWaterSurface = function (width, depth, opts = {}) {
+  const shoreAxis = opts.shoreAxis === 'x' ? 0.0 : 1.0; // 0 = X (BF river west), 1 = Z (RP river north)
+  const shoreEdge = opts.shoreEdge != null ? opts.shoreEdge : -194.0;
+  const uniforms = {
+    uTime: { value: 0 },
+    uDeepColor: { value: new THREE.Color(0x0b2234) },
+    uShallowColor: { value: new THREE.Color(0x1f5568) },
+    uSkyColor: { value: new THREE.Color(0x527598) },
+    uSunColor: { value: new THREE.Color(0xffe1a8) },
+    uSunDir: { value: new THREE.Vector3(0.4, 0.5, -0.5).normalize() },
+    uShoreAxis: { value: shoreAxis },
+    uShoreEdge: { value: shoreEdge },
+    uFogColor: { value: new THREE.Color(0x527598) },
+    uFogDensity: { value: 0.0028 }
+  };
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms,
+    transparent: true,
+    depthWrite: true,
+    vertexShader: [
+      'uniform float uTime;',
+      'varying vec3 vWorldPos;',
+      'varying float vWave;',
+      'void main() {',
+      '  vec4 wp = modelMatrix * vec4(position, 1.0);',
+      '  float w = sin(wp.x * 0.16 + uTime * 1.45) * 0.065 + cos(wp.z * 0.14 - uTime * 1.2) * 0.055 + sin((wp.x + wp.z) * 0.25 + uTime * 1.9) * 0.03;',
+      '  wp.y += w;',
+      '  vWave = w;',
+      '  vWorldPos = wp.xyz;',
+      '  gl_Position = projectionMatrix * viewMatrix * wp;',
+      '}'
+    ].join('\n'),
+    fragmentShader: [
+      'uniform float uTime;',
+      'uniform vec3 uDeepColor;',
+      'uniform vec3 uShallowColor;',
+      'uniform vec3 uSkyColor;',
+      'uniform vec3 uSunColor;',
+      'uniform vec3 uSunDir;',
+      'uniform float uShoreAxis;',
+      'uniform float uShoreEdge;',
+      'uniform vec3 uFogColor;',
+      'uniform float uFogDensity;',
+      'varying vec3 vWorldPos;',
+      'varying float vWave;',
+      'float hash21(vec2 p) {',
+      '  p = fract(p * vec2(123.34, 456.21));',
+      '  p += dot(p, p + 45.32);',
+      '  return fract(p.x * p.y);',
+      '}',
+      'float vnoise(vec2 p) {',
+      '  vec2 i = floor(p); vec2 f = fract(p);',
+      '  f = f * f * (3.0 - 2.0 * f);',
+      '  float a = hash21(i); float b = hash21(i + vec2(1.0, 0.0));',
+      '  float c = hash21(i + vec2(0.0, 1.0)); float d = hash21(i + vec2(1.0, 1.0));',
+      '  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);',
+      '}',
+      'void main() {',
+      '  vec2 uv = vWorldPos.xz;',
+      '  /* Quantized subtle PS1 ripple grid + flowing river currents */',
+      '  vec2 qUv = floor(uv * 2.2) / 2.2;',
+      '  float n1 = vnoise(qUv * 0.22 + vec2(uTime * 0.18, uTime * 0.34));',
+      '  float n2 = vnoise(qUv * 0.48 - vec2(uTime * 0.28, -uTime * 0.22));',
+      '  float n3 = vnoise(uv * 0.95 + vec2(uTime * 0.55, uTime * 0.38));',
+      '  float ripple = n1 * 0.5 + n2 * 0.35 + n3 * 0.15;',
+      '  vec3 N = normalize(vec3((n1 - 0.5) * 0.36 + (n3 - 0.5) * 0.14, 1.0, (n2 - 0.5) * 0.36 + (n3 - 0.5) * 0.14));',
+      '  vec3 V = normalize(cameraPosition - vWorldPos);',
+      '  float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.2);',
+      '  float coord = mix(vWorldPos.x, vWorldPos.z, uShoreAxis);',
+      '  float shoreDist = max(0.0, uShoreEdge - coord);',
+      '  float shallow = exp(-shoreDist * 0.055);',
+      '  vec3 baseCol = mix(uDeepColor, uShallowColor, clamp(shallow * 0.85 + ripple * 0.28, 0.0, 1.0));',
+      '  vec3 col = mix(baseCol, uSkyColor * 0.92, clamp(fresnel * 0.78 + 0.08, 0.0, 0.88));',
+      '  /* Crisp dancing sun/moon specular glint */',
+      '  vec3 H = normalize(normalize(uSunDir) + V);',
+      '  float spec = pow(max(dot(N, H), 0.0), 68.0);',
+      '  float sparkle = smoothstep(0.68, 0.92, n2 * n3 * 1.45) * pow(max(dot(N, H), 0.0), 16.0);',
+      '  col += uSunColor * (spec * 1.15 + sparkle * 0.75);',
+      '  /* Animated whitewater shoreline foam band & crest highlights */',
+      '  float shoreWave = sin(shoreDist * 1.4 - uTime * 2.8 + n1 * 4.0) * 0.5 + 0.5;',
+      '  float foam = smoothstep(6.2, 0.4, shoreDist) * smoothstep(0.32, 0.78, shoreWave * 0.75 + n2 * 0.5);',
+      '  float crestFoam = smoothstep(0.76, 0.94, ripple + vWave * 1.8) * 0.22;',
+      '  col = mix(col, vec3(0.88, 0.94, 0.97), clamp(foam * 0.78 + crestFoam, 0.0, 0.88));',
+      '  /* Exponential squared fog matching scene.fog */',
+      '  float dist = length(cameraPosition - vWorldPos);',
+      '  float fogFactor = 1.0 - exp(-(uFogDensity * dist) * (uFogDensity * dist));',
+      '  col = mix(col, uFogColor, clamp(fogFactor, 0.0, 1.0));',
+      '  gl_FragColor = vec4(col, mix(0.88, 0.96, 1.0 - shallow * 0.4));',
+      '}'
+    ].join('\n')
+  });
+
+  const segX = Math.max(12, Math.min(48, Math.round(width / 12)));
+  const segZ = Math.max(12, Math.min(48, Math.round(depth / 12)));
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, depth, segX, segZ), mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.receiveShadow = true;
+  return { mesh, uniforms };
+};
+
 KC.buildCity = function (scene) {
   KC.WORLD_LIMIT = 260;
   const city = {
@@ -649,14 +754,48 @@ KC.buildCity = function (scene) {
     return mesh;
   };
 
-  /* Extended ground + roads */
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(680, 680), new THREE.MeshStandardMaterial({ color: 0x16161b, roughness: 1 }));
+  /* Extended textured city ground (trimmed cleanly at Berkley Riverfront z = -194 so Missouri River is 100% visible!) */
+  const cityGroundTex = KC.makePS1Texture(64, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#25262c';
+    ctx.fillRect(0, 0, w, h);
+    let s = 307;
+    const r = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+    for (let i = 0; i < 360; i++) {
+      ctx.fillStyle = r() < 0.5 ? '#1f2026' : '#2d2f36';
+      ctx.fillRect(Math.floor(r() * w), Math.floor(r() * h), 2 + Math.floor(r() * 3), 2 + Math.floor(r() * 3));
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.14)';
+    for (let y = 0; y < h; y += 16) ctx.fillRect(0, y, w, 1);
+    for (let x = 0; x < w; x += 16) ctx.fillRect(x, 0, 1, h);
+  }, 56, 46);
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(680, 560),
+    new THREE.MeshStandardMaterial({ map: cityGroundTex, roughness: 0.94, metalness: 0.05 })
+  );
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.06;
+  ground.position.set(0, -0.06, 86); // covers z from -194 to +366 (leaves Missouri River north of z = -194 wide open!)
   ground.receiveShadow = true;
   scene.add(ground);
   city.rayMeshes.push(ground);
   city.ground = ground;
+
+  /* Sloping rocky/sandy Missouri River riverbed & Berkley Riverfront seawall embankment */
+  const riverBedMat = new THREE.MeshStandardMaterial({ color: 0x2a2924, roughness: 0.98, flatShading: true });
+  const riverBed = new THREE.Mesh(new THREE.PlaneGeometry(680, 290), riverBedMat);
+  riverBed.rotation.x = -Math.PI / 2;
+  riverBed.position.set(0, -1.75, -338);
+  scene.add(riverBed);
+
+  /* Sloped riprap embankment along z = -194..-204 */
+  const bankSlope = new THREE.Mesh(new THREE.PlaneGeometry(680, 12), stoneMat);
+  bankSlope.rotation.x = -Math.PI / 2 + 0.16;
+  bankSlope.position.set(0, -0.88, -199.5);
+  scene.add(bankSlope);
+
+  /* Stone Berkley Riverfront Seawall with open marina access gaps at x = 40 and x = -56 */
+  for (const seg of [{ x: -206, w: 266 }, { x: -8, w: 72 }, { x: 206, w: 300 }]) {
+    addBox(seg.w, 1.15, 2.2, stoneMat, seg.x, 0.25, -193.2, 0, { collide: false, ray: true });
+  }
 
   const roadSpan = 396;
   const roadGeoV = new THREE.PlaneGeometry(10, roadSpan);
@@ -1154,71 +1293,98 @@ KC.buildBattlefield = function (scene) {
   city.registerCullItem = function () {};
   city.createBuilding = function () {};
 
-  /* ---------- Authentic PS1 Pixelated Procedural Materials ---------- */
-  const terrainTex = KC.makePS1Texture(64, 64, (ctx, w, h) => {
-    ctx.fillStyle = '#334029';
+  /* ---------- Authentic PS1 Pixelated Procedural Materials (128x128 Rich Detail) ---------- */
+  const terrainTex = KC.makePS1Texture(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#3d4c30';
     ctx.fillRect(0, 0, w, h);
     let s = 901;
     const r = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
-    const cols = ['#2b3622', '#3c4a30', '#42472d', '#293020', '#4a4632'];
-    for (let i = 0; i < 480; i++) {
-      ctx.fillStyle = cols[Math.floor(r() * cols.length)];
-      ctx.fillRect(Math.floor(r() * w), Math.floor(r() * h), 2 + Math.floor(r() * 4), 2 + Math.floor(r() * 4));
+    /* Layered turf blotches, prairie grass, damp mud patches & gravel pebbles */
+    const blotches = ['#314026', '#465836', '#4c5234', '#38452a', '#554d38', '#2c3821'];
+    for (let i = 0; i < 650; i++) {
+      ctx.fillStyle = blotches[Math.floor(r() * blotches.length)];
+      ctx.fillRect(Math.floor(r() * w), Math.floor(r() * h), 3 + Math.floor(r() * 8), 3 + Math.floor(r() * 7));
     }
-  }, 44, 44);
+    /* Crisp grass blades & micro-pebbles */
+    for (let i = 0; i < 900; i++) {
+      const x = Math.floor(r() * w), y = Math.floor(r() * h);
+      const roll = r();
+      ctx.fillStyle = roll < 0.45 ? '#586c3e' : roll < 0.78 ? '#27311d' : '#6c634a';
+      ctx.fillRect(x, y, roll < 0.7 ? 1 : 2, roll < 0.45 ? 3 : 2);
+    }
+  }, 46, 56);
 
-  const sandTex = KC.makePS1Texture(32, 32, (ctx, w, h) => {
-    ctx.fillStyle = '#8f8262';
+  const sandTex = KC.makePS1Texture(64, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#9b8d69';
     ctx.fillRect(0, 0, w, h);
     let s = 412;
     const r = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
-    for (let i = 0; i < 180; i++) {
-      ctx.fillStyle = r() < 0.5 ? '#7c7053' : '#a19474';
-      ctx.fillRect(Math.floor(r() * w), Math.floor(r() * h), 2, 2);
+    for (let i = 0; i < 520; i++) {
+      const roll = r();
+      ctx.fillStyle = roll < 0.4 ? '#847656' : roll < 0.8 ? '#afa17d' : '#655c48';
+      ctx.fillRect(Math.floor(r() * w), Math.floor(r() * h), 2 + Math.floor(r() * 3), 2);
     }
+    /* Wind/tide ripple lines */
+    ctx.fillStyle = 'rgba(72, 60, 40, 0.16)';
+    for (let y = 0; y < h; y += 6) ctx.fillRect(0, y, w, 1);
   }, 6, 48);
 
-  const waterTex = KC.makePS1Texture(64, 64, (ctx, w, h) => {
-    ctx.fillStyle = '#142a3d';
+  const woodTex = KC.makePS1Texture(64, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#5e4833';
     ctx.fillRect(0, 0, w, h);
-    for (let y = 0; y < h; y += 4) {
-      ctx.fillStyle = y % 8 === 0 ? '#1b3850' : '#102232';
-      ctx.fillRect(0, y, w, 2);
-      for (let x = 0; x < w; x += 10) {
-        ctx.fillStyle = 'rgba(130,175,210,0.14)';
-        ctx.fillRect((x + y * 3) % w, y, 5, 1);
-      }
-    }
-  }, 18, 40);
-
-  const concreteTex = KC.makePS1Texture(32, 32, (ctx, w, h) => {
-    ctx.fillStyle = '#5f6266';
-    ctx.fillRect(0, 0, w, h);
+    let s = 519;
+    const r = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
     for (let y = 0; y < h; y += 8) {
-      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillStyle = y % 16 === 0 ? '#67503a' : '#533e2b';
+      ctx.fillRect(0, y, w, 7);
+      ctx.fillStyle = '#2d2116';
+      ctx.fillRect(0, y + 7, w, 1);
+    }
+    for (let i = 0; i < 260; i++) {
+      ctx.fillStyle = r() < 0.5 ? 'rgba(0,0,0,0.14)' : 'rgba(255,235,205,0.08)';
+      ctx.fillRect(Math.floor(r() * w), Math.floor(r() * h), 5 + Math.floor(r() * 8), 1);
+    }
+  }, 4, 2);
+
+  const concreteTex = KC.makePS1Texture(64, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#65696e';
+    ctx.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 16) {
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
       ctx.fillRect(0, y, w, 1);
     }
-    for (let i = 0; i < 120; i++) {
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.08)';
+    for (let x = 0; x < w; x += 32) {
+      ctx.fillStyle = 'rgba(0,0,0,0.14)';
+      ctx.fillRect(x, 0, 1, h);
+    }
+    for (let i = 0; i < 380; i++) {
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(0,0,0,0.13)' : 'rgba(255,255,255,0.09)';
       ctx.fillRect((i * 19) % w, (i * 29) % h, 2, 2);
     }
   }, 2, 2);
 
-  const roadTex = KC.makePS1Texture(32, 64, (ctx, w, h) => {
-    ctx.fillStyle = '#2b2d32';
+  const roadTex = KC.makePS1Texture(64, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#2c2f34';
     ctx.fillRect(0, 0, w, h);
-    for (let i = 0; i < 160; i++) {
-      ctx.fillStyle = i % 2 === 0 ? '#24262b' : '#35383e';
-      ctx.fillRect((i * 17) % w, (i * 31) % h, 2, 2);
+    /* Gravel shoulders & worn wheel ruts */
+    ctx.fillStyle = '#3b3b38';
+    ctx.fillRect(0, 0, 4, h);
+    ctx.fillRect(w - 4, 0, 4, h);
+    ctx.fillStyle = '#24272c';
+    ctx.fillRect(14, 0, 9, h);
+    ctx.fillRect(w - 23, 0, 9, h);
+    for (let i = 0; i < 540; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#23262b' : '#393d44';
+      ctx.fillRect((i * 17) % w, (i * 31) % h, 2, 3);
     }
     /* Edge lines */
-    ctx.fillStyle = '#7e7d75';
-    ctx.fillRect(2, 0, 1, h);
-    ctx.fillRect(w - 3, 0, 1, h);
+    ctx.fillStyle = '#908f84';
+    ctx.fillRect(5, 0, 2, h);
+    ctx.fillRect(w - 7, 0, 2, h);
     /* Dashed yellow centerline */
-    ctx.fillStyle = '#c9a038';
-    ctx.fillRect(w / 2 - 1, 6, 2, 20);
-    ctx.fillRect(w / 2 - 1, 38, 2, 20);
+    ctx.fillStyle = '#d4a93c';
+    ctx.fillRect(w / 2 - 1, 10, 3, 40);
+    ctx.fillRect(w / 2 - 1, 74, 3, 40);
   }, 1, 20);
 
   const runwayTex = KC.makePS1Texture(64, 64, (ctx, w, h) => {
@@ -1265,15 +1431,16 @@ KC.buildBattlefield = function (scene) {
     return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.78, metalness: 0.35, flatShading: true });
   };
 
-  const groundMat = new THREE.MeshStandardMaterial({ map: terrainTex, roughness: 0.96, flatShading: true });
+  const groundMat = new THREE.MeshStandardMaterial({ map: terrainTex, vertexColors: true, roughness: 0.95, flatShading: true });
+  const hillMat = new THREE.MeshStandardMaterial({ map: terrainTex, color: 0x6f765a, roughness: 0.96, flatShading: true });
   const sandMat = new THREE.MeshStandardMaterial({ map: sandTex, roughness: 0.95, flatShading: true });
-  const waterMat = new THREE.MeshStandardMaterial({ map: waterTex, color: 0x3b6787, roughness: 0.25, metalness: 0.55, transparent: true, opacity: 0.9 });
+  const rockMat = new THREE.MeshStandardMaterial({ map: concreteTex, color: 0x706c64, roughness: 0.94, flatShading: true });
   const concreteMat = new THREE.MeshStandardMaterial({ map: concreteTex, roughness: 0.88, metalness: 0.12, flatShading: true });
   const darkConcreteMat = new THREE.MeshStandardMaterial({ map: concreteTex, color: 0x7a7e84, roughness: 0.9, metalness: 0.15, flatShading: true });
   const metalMat = new THREE.MeshStandardMaterial({ color: 0x38414a, roughness: 0.52, metalness: 0.65, flatShading: true });
   const rustMat = new THREE.MeshStandardMaterial({ color: 0x5d3928, roughness: 0.88, metalness: 0.35, flatShading: true });
   const oliveMat = new THREE.MeshStandardMaterial({ map: KC.makeCamoTexture(), roughness: 0.86, flatShading: true });
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x5b4632, roughness: 0.92, flatShading: true });
+  const woodMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.92, flatShading: true });
   const sandbagMat = new THREE.MeshStandardMaterial({ map: sandbagTex, roughness: 0.96, flatShading: true });
   const roadMat = new THREE.MeshStandardMaterial({ map: roadTex, roughness: 0.92, flatShading: true });
   const runwayMat = new THREE.MeshStandardMaterial({ map: runwayTex, roughness: 0.9, flatShading: true });
@@ -1283,37 +1450,118 @@ KC.buildBattlefield = function (scene) {
   const containerTan = makeContainerMat('#8b7854', '#695a3d');
   const lampBulbMat = new THREE.MeshBasicMaterial({ color: 0xffd39a, toneMapped: false });
   city.lampBulbMat = lampBulbMat;
-  city.materials = { waterTex, microBump: null };
+  city.materials = { waterTex: null, microBump: null };
 
-  /* ---------- Terrain, Missouri River, Shoreline & Roads ---------- */
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(760, 760), groundMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(45, -0.06, 0);
+  /* ---------- Sculpted Vertex-Colored Terrain, Missouri Riverbed & Animated Water ---------- */
+  const terrainGeo = new THREE.PlaneGeometry(580, 760, 76, 96);
+  terrainGeo.rotateX(-Math.PI / 2);
+  const tPos = terrainGeo.attributes.position;
+  const tCols = new Float32Array(tPos.count * 3);
+  const cGrass = new THREE.Color(0x9cb383);
+  const cMud = new THREE.Color(0x887b5e);
+  const cSand = new THREE.Color(0xcab991);
+  const cRock = new THREE.Color(0x8c877c);
+  const cDarkBed = new THREE.Color(0x3a3a33);
+  const tmpC = new THREE.Color();
+
+  for (let i = 0; i < tPos.count; i++) {
+    const lx = tPos.getX(i);
+    const lz = tPos.getZ(i);
+    /* World coords when mesh placed at x = 132 (spans x: -158 .. +422) */
+    const wx = lx + 132;
+    const wz = lz;
+
+    let y = -0.05;
+    tmpC.copy(cGrass);
+
+    /* Organic biome color variation across combat valley */
+    const nA = Math.sin(wx * 0.042 + wz * 0.031) * 0.5 + Math.cos(wx * 0.023 - wz * 0.052) * 0.5;
+    if (nA > 0.25) tmpC.lerp(cMud, (nA - 0.25) * 0.6);
+
+    /* Western Missouri Riverbank: smoothly slopes down below water level (-0.16) into submerged riverbed (-1.75) */
+    if (wx < -130) {
+      const t = KC.clamp((-130 - wx) / 26, 0, 1);
+      y = -0.05 - t * t * 1.75;
+      tmpC.copy(cSand).lerp(cDarkBed, KC.clamp((t - 0.35) / 0.65, 0, 1));
+    } else if (wx < -118) {
+      const t = KC.clamp((-118 - wx) / 12, 0, 1);
+      tmpC.lerp(cSand, t * 0.72);
+    } else {
+      /* Sculpted Eastern Limestone Bluffs & Rolling Valley Perimeter Hills (outside playable runway/base grid) */
+      let hillH = 0;
+      if (wx > 236) {
+        const et = KC.clamp((wx - 236) / 68, 0, 1);
+        hillH = Math.max(hillH, et * et * (16 + Math.sin(wz * 0.032) * 6.5 + Math.cos(wx * 0.05 + wz * 0.02) * 4.5));
+      }
+      if (Math.abs(wz) > 232) {
+        const nt = KC.clamp((Math.abs(wz) - 232) / 64, 0, 1);
+        hillH = Math.max(hillH, nt * nt * (14 + Math.cos(wx * 0.035) * 5.5 + Math.sin(wz * 0.045) * 3.5));
+      }
+      if (hillH > 0.05) {
+        y = -0.05 + hillH;
+        tmpC.lerp(cRock, KC.clamp(hillH / 12, 0, 0.85));
+      }
+    }
+
+    tPos.setY(i, y);
+    tCols[i * 3] = tmpC.r;
+    tCols[i * 3 + 1] = tmpC.g;
+    tCols[i * 3 + 2] = tmpC.b;
+  }
+  terrainGeo.setAttribute('color', new THREE.BufferAttribute(tCols, 3));
+  terrainGeo.computeVertexNormals();
+
+  const ground = new THREE.Mesh(terrainGeo, groundMat);
+  ground.position.set(132, 0, 0);
   ground.receiveShadow = true;
   scene.add(ground);
   city.rayMeshes.push(ground);
 
-  /* Missouri River (West side: x from -380 to -150) */
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(250, 780), waterMat);
-  sea.rotation.x = -Math.PI / 2;
-  sea.position.set(-275, -0.18, 0);
-  sea.receiveShadow = true;
+  /* Submerged Western Riverbed Extension (x = -460 .. -150 at y = -1.8) */
+  const riverBed = new THREE.Mesh(
+    new THREE.PlaneGeometry(320, 780),
+    new THREE.MeshStandardMaterial({ color: 0x242622, roughness: 0.98, flatShading: true })
+  );
+  riverBed.rotation.x = -Math.PI / 2;
+  riverBed.position.set(-310, -1.82, 0);
+  scene.add(riverBed);
+
+  /* Missouri River Animated GLSL Water Surface (x = -450 .. -140, completely UNCOVERED at y = -0.16!) */
+  const waterObj = KC.createWaterSurface(316, 780, { shoreAxis: 'x', shoreEdge: -140 });
+  const sea = waterObj.mesh;
+  sea.position.set(-296, -0.16, 0);
   scene.add(sea);
   city.water = sea;
+  city.waterUniforms = waterObj.uniforms;
   city.updaters.push((t) => {
-    waterTex.offset.y = (t * 0.035) % 1;
-    waterTex.offset.x = Math.sin(t * 0.4) * 0.02;
+    waterObj.uniforms.uTime.value = t;
   });
 
-  /* Sandy/gravel river beach & embankment */
-  const beach = new THREE.Mesh(new THREE.PlaneGeometry(36, 760), sandMat);
-  beach.rotation.x = -Math.PI / 2;
-  beach.position.set(-148, -0.03, 0);
-  beach.receiveShadow = true;
-  scene.add(beach);
+  /* Natural Shoreline Boulders & River Reeds along the Missouri Riverbank */
+  const reedMat = new THREE.MeshStandardMaterial({ color: 0x455a2c, roughness: 0.95, flatShading: true });
+  for (let bz = -220; bz <= 220; bz += 18) {
+    /* Leave clear landings at the piers and central beach */
+    if (Math.abs(bz - 110) < 16 || Math.abs(bz + 20) < 12 || Math.abs(bz + 142) < 14 || Math.abs(bz - 18) < 16) continue;
+    const rx = -139 - ((Math.abs(bz * 7) % 6));
+    const rs = 0.8 + ((Math.abs(bz * 13) % 10) * 0.14);
+    const boulder = new THREE.Mesh(new THREE.DodecahedronGeometry(rs, 0), rockMat);
+    boulder.position.set(rx, rs * 0.35 - 0.15, bz);
+    boulder.scale.set(1.2, 0.72, 1.0);
+    boulder.rotation.set(bz * 0.2, bz * 0.5, 0);
+    boulder.receiveShadow = true;
+    scene.add(boulder);
+    if (Math.abs(bz) % 36 === 0) {
+      for (let k = 0; k < 4; k++) {
+        const reed = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.35 + (k % 2) * 0.35, 0.12), reedMat);
+        reed.position.set(rx + 2.2 + k * 0.45, 0.55, bz + (k - 1.5) * 0.5);
+        reed.rotation.z = (k - 1.5) * 0.12;
+        scene.add(reed);
+      }
+    }
+  }
 
-  /* Concrete river seawall segments (with open beach landing gaps) */
-  for (const seg of [{ z: -210, l: 110 }, { z: -55, l: 110 }, { z: 205, l: 130 }]) {
+  /* Concrete river seawall segments (with wide open beach & pier landing gaps) */
+  for (const seg of [{ z: -200, l: 74 }, { z: -80, l: 78 }, { z: 205, l: 110 }]) {
     addBox(2.2, 1.4, seg.l, darkConcreteMat, -133, 0.65, seg.z, 0, { collide: true, tag: 'wall' });
   }
 
@@ -1459,8 +1707,8 @@ KC.buildBattlefield = function (scene) {
 
   /* --- 2. SECTOR BRAVO: ARTILLERY RIDGE (EAST HIGH GROUND, x: 145, z: -105) --- */
   /* Terraced low-poly rocky ridge backdrop (east side behind cover) */
-  addBox(22, 7.5, 42, groundMat, 182, 3.6, -105, 0, { collide: true, tag: 'hill' });
-  addBox(14, 4.2, 34, groundMat, 168, 2.0, -105, 0, { collide: true, tag: 'hill' });
+  addBox(22, 7.5, 42, hillMat, 182, 3.6, -105, 0, { collide: true, tag: 'hill' });
+  addBox(14, 4.2, 34, hillMat, 168, 2.0, -105, 0, { collide: true, tag: 'hill' });
   /* Two 155mm Howitzer Artillery Emplacements */
   for (const az of [-118, -92]) {
     addSandbagWall(132, az, 9, true);
@@ -1518,14 +1766,24 @@ KC.buildBattlefield = function (scene) {
     addCylinder(5.2, 5.2, 8.5, 10, concreteMat, -90, 4.25, tz, { collide: true, tag: 'building' });
     addCylinder(5.4, 5.4, 0.5, 10, rustMat, -90, 8.6, tz);
   }
-  /* Naval Pier extending west into the Missouri River */
-  addBox(46, 0.65, 12, woodMat, -158, 0.45, 110);
-  for (let px = -140; px >= -178; px -= 9) {
-    addCylinder(0.35, 0.35, 2.2, 6, woodMat, px, -0.4, 104.5);
-    addCylinder(0.35, 0.35, 2.2, 6, woodMat, px, -0.4, 115.5);
+  /* Naval Pier extending west into the Missouri River (walkable, no blocking collider!) */
+  addBox(46, 0.45, 12, woodMat, -154, 0.14, 110);
+  for (let px = -136; px >= -174; px -= 9) {
+    addCylinder(0.35, 0.35, 2.6, 6, woodMat, px, -0.8, 104.5);
+    addCylinder(0.35, 0.35, 2.6, 6, woodMat, px, -0.8, 115.5);
   }
-  /* Second Boat Dock to the north-west */
-  addBox(38, 0.65, 9, woodMat, -155, 0.45, -20);
+  /* Central Boat Dock */
+  addBox(38, 0.45, 9, woodMat, -151, 0.14, -20);
+  for (let px = -136; px >= -168; px -= 8) {
+    addCylinder(0.32, 0.32, 2.5, 6, woodMat, px, -0.8, -24);
+    addCylinder(0.32, 0.32, 2.5, 6, woodMat, px, -0.8, -16);
+  }
+  /* North Cove Assault Pier (near ALPHA) */
+  addBox(36, 0.45, 9, woodMat, -150, 0.14, -142);
+  for (let px = -136; px >= -166; px -= 8) {
+    addCylinder(0.32, 0.32, 2.5, 6, woodMat, px, -0.8, -146);
+    addCylinder(0.32, 0.32, 2.5, 6, woodMat, px, -0.8, -138);
+  }
   /* Dockside Cargo Crane & Warehouse */
   addBunker(-114, 134, 12, 9, 4.0, 'north');
   addBox(8.2, 2.9, 3.0, containerRed, -120, 1.45, 92, 0, { collide: true });
@@ -1784,10 +2042,12 @@ KC.buildBattlefield = function (scene) {
     /* Fighter / Recon Planes on Airfield Runway */
     { type: 'plane', x: 212, z: 92, heading: 0, color: 0x7a8590, kind: 'parked' },
     { type: 'plane', x: 212, z: -42, heading: Math.PI, color: 0x5c6654, kind: 'parked' },
-    /* Patrol Gunboats moored along River Docks */
-    { type: 'boat', x: -186, z: 100, heading: 0, color: 0x3a4a58, kind: 'parked' },
-    { type: 'boat', x: -186, z: 122, heading: 0, color: 0x4a5846, kind: 'parked' },
-    { type: 'boat', x: -182, z: -20, heading: Math.PI, color: 0x524444, kind: 'parked' }
+    /* Patrol Gunboats & Fast Assault RHIB Speedboats moored along River Piers & Beach */
+    { type: 'boat', boatKind: 'gunboat', x: -168, z: 100, heading: 0, color: 0x3a4a58, kind: 'parked' },
+    { type: 'boat', boatKind: 'gunboat', x: -168, z: 121, heading: 0, color: 0x4a5846, kind: 'parked' },
+    { type: 'boat', boatKind: 'speedboat', x: -152, z: 18, heading: Math.PI / 2, color: 0x3e4c3a, kind: 'parked' },
+    { type: 'boat', boatKind: 'gunboat', x: -166, z: -20, heading: Math.PI, color: 0x524444, kind: 'parked' },
+    { type: 'boat', boatKind: 'speedboat', x: -166, z: -142, heading: Math.PI, color: 0x384654, kind: 'parked' }
   ];
 
   /* Safe Spawn Points (clear of flagpoles, walls, and obstacles) */

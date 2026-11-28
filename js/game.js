@@ -174,17 +174,22 @@ for (let i = 0; i < LAMP_LIGHT_POOL_SIZE; i++) {
   lampLightPool.push(pl);
 }
 
-/* ---------- Dynamic Sky, Stars, Sun & Moon ---------- */
+/* ---------- Dynamic Atmospheric Skysphere, Procedural Clouds, Stars, Sun & Moon ---------- */
 const skyUniforms = {
-  uTopColor: { value: new THREE.Color(0.004, 0.007, 0.016) },
-  uHorizonColor: { value: new THREE.Color(0.05, 0.07, 0.108) },
-  uGlowColor: { value: new THREE.Color(0.12, 0.065, 0.04) },
+  uTime: { value: 0 },
+  uTopColor: { value: new THREE.Color(0.015, 0.035, 0.085) },
+  uMidColor: { value: new THREE.Color(0.08, 0.14, 0.24) },
+  uHorizonColor: { value: new THREE.Color(0.18, 0.22, 0.30) },
+  uGlowColor: { value: new THREE.Color(0.95, 0.52, 0.24) },
   uSunDir: { value: new THREE.Vector3(0.4, 0.6, -0.5).normalize() },
-  uSunGlow: { value: 0.2 }
+  uMoonDir: { value: new THREE.Vector3(-0.4, 0.5, -0.6).normalize() },
+  uSunGlow: { value: 0.45 },
+  uCloudCover: { value: 0.42 },
+  uNightFactor: { value: 0.3 }
 };
 
 const sky = new THREE.Mesh(
-  new THREE.SphereGeometry(520, 28, 14),
+  new THREE.SphereGeometry(560, 36, 20),
   new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -193,18 +198,68 @@ const sky = new THREE.Mesh(
     vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: [
       'varying vec3 vDir;',
+      'uniform float uTime;',
       'uniform vec3 uTopColor;',
+      'uniform vec3 uMidColor;',
       'uniform vec3 uHorizonColor;',
       'uniform vec3 uGlowColor;',
       'uniform vec3 uSunDir;',
+      'uniform vec3 uMoonDir;',
       'uniform float uSunGlow;',
+      'uniform float uCloudCover;',
+      'uniform float uNightFactor;',
+      'float hash(vec2 p){ p = fract(p * vec2(127.1, 311.7)); p += dot(p, p + 34.12); return fract(p.x * p.y); }',
+      'float noise(vec2 p){',
+      '  vec2 i = floor(p); vec2 f = fract(p);',
+      '  f = f * f * (3.0 - 2.0 * f);',
+      '  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);',
+      '}',
+      'float fbm(vec2 p){',
+      '  float v = 0.0; float a = 0.52;',
+      '  for(int i = 0; i < 4; i++){ v += a * noise(p); p = p * 2.07 + vec2(13.1, 7.7); a *= 0.5; }',
+      '  return v;',
+      '}',
       'void main(){',
-      '  float h = max(vDir.y, 0.0);',
-      '  vec3 col = mix(uHorizonColor, uTopColor, pow(h, 0.55));',
-      '  float glow = pow(1.0 - abs(vDir.y), 14.0);',
-      '  col += uGlowColor * glow * 0.75;',
-      '  float sunAmt = max(dot(vDir, uSunDir), 0.0);',
-      '  col += uGlowColor * pow(sunAmt, 16.0) * uSunGlow;',
+      '  vec3 d = normalize(vDir);',
+      '  float h = clamp(d.y, 0.0, 1.0);',
+      '  /* 3-stop Rayleigh atmospheric gradient */',
+      '  vec3 lowBand = mix(uHorizonColor, uMidColor, smoothstep(0.0, 0.28, h));',
+      '  vec3 col = mix(lowBand, uTopColor, smoothstep(0.18, 0.85, pow(h, 0.72)));',
+      '  /* Warm horizon atmospheric scatter + Mie solar aureole */',
+      '  float horizBand = pow(1.0 - abs(d.y), 9.0);',
+      '  col += uGlowColor * horizBand * (0.28 + uSunGlow * 0.42);',
+      '  float sunAmt = max(dot(d, normalize(uSunDir)), 0.0);',
+      '  col += uGlowColor * pow(sunAmt, 10.0) * uSunGlow * 0.75;',
+      '  float sunDisc = smoothstep(0.9985, 0.9994, sunAmt) * (1.0 - uNightFactor * 0.92) * (1.0 - uCloudCover * 0.45);',
+      '  col += vec3(1.0, 0.96, 0.85) * sunDisc * 2.4;',
+      '  /* Subtle moon halo at night */',
+      '  float moonAmt = max(dot(d, normalize(uMoonDir)), 0.0);',
+      '  col += vec3(0.45, 0.62, 0.92) * pow(moonAmt, 36.0) * uNightFactor * 0.65;',
+      '  /* 2-layer drifting procedural clouds projected onto sky dome */',
+      '  if (d.y > 0.015) {',
+      '    vec2 skyUV = d.xz / (d.y + 0.14);',
+      '    float c1 = fbm(skyUV * 0.55 + vec2(uTime * 0.0085, uTime * 0.0045));',
+      '    float c2 = fbm(skyUV * 1.15 - vec2(uTime * 0.005, -uTime * 0.011));',
+      '    float cloudRaw = c1 * 0.68 + c2 * 0.32;',
+      '    float thresh = mix(0.58, 0.34, clamp(uCloudCover, 0.0, 1.0));',
+      '    float cloudMask = smoothstep(thresh, thresh + 0.26, cloudRaw) * smoothstep(0.015, 0.16, d.y);',
+      '    /* Directional cloud rim-lighting from sun / dusk glow / moonlight */',
+      '    vec3 cloudLit = mix(vec3(0.96, 0.95, 0.93), uGlowColor * 1.35 + vec3(0.32, 0.24, 0.2), clamp(uSunGlow * 0.75, 0.0, 0.85));',
+      '    cloudLit = mix(cloudLit, vec3(0.22, 0.30, 0.44), uNightFactor * 0.88);',
+      '    vec3 cloudShade = mix(uMidColor * 0.72, vec3(0.06, 0.09, 0.15), uNightFactor * 0.85);',
+      '    float sunRim = smoothstep(0.35, 0.85, c2) * 0.45 + pow(sunAmt, 4.0) * 0.55;',
+      '    vec3 cloudCol = mix(cloudShade, cloudLit, clamp(sunRim * (1.0 - uCloudCover * 0.35), 0.12, 1.0));',
+      '    col = mix(col, cloudCol, clamp(cloudMask * (0.68 + uCloudCover * 0.28), 0.0, 0.92));',
+      '  }',
+      '  /* Subtle distant Missouri prairie / bluff horizon silhouette */',
+      '  float az = atan(d.z, d.x);',
+      '  float ridge = 0.018 + 0.014 * sin(az * 5.0 + 0.7) + 0.009 * cos(az * 13.0 - 1.2) + 0.005 * sin(az * 27.0);',
+      '  float ridgeMask = smoothstep(ridge + 0.006, ridge - 0.004, d.y) * step(-0.04, d.y);',
+      '  vec3 ridgeCol = mix(uHorizonColor * 0.42, vec3(0.03, 0.04, 0.07), uNightFactor * 0.7);',
+      '  col = mix(col, ridgeCol, ridgeMask * 0.72);',
+      '  if (d.y < 0.0) {',
+      '    col = mix(uHorizonColor * 0.58, uHorizonColor * 0.25, clamp(-d.y * 4.0, 0.0, 1.0));',
+      '  }',
       '  gl_FragColor = vec4(col, 1.0);',
       '}'
     ].join('\n')
@@ -546,19 +601,25 @@ function updateDayNightCycle(dt) {
     workColorB.lerp(new THREE.Color(0xffffff), state.lightningFlash * 0.8);
   }
 
+  skyUniforms.uTime.value = gameTime;
   skyUniforms.uTopColor.value.copy(workColorA);
+  skyUniforms.uMidColor.value.copy(workColorA).lerp(workColorB, 0.48);
   skyUniforms.uHorizonColor.value.copy(workColorB);
   skyUniforms.uGlowColor.value.setRGB(
-    lerp(0.12, 0.95, twilight * 0.85 + dayFactor * 0.25),
-    lerp(0.07, 0.48, twilight * 0.65 + dayFactor * 0.35),
-    lerp(0.05, 0.22, dayFactor)
+    lerp(0.14, 0.98, twilight * 0.88 + dayFactor * 0.26),
+    lerp(0.08, 0.52, twilight * 0.65 + dayFactor * 0.38),
+    lerp(0.06, 0.24, dayFactor)
   );
-  skyUniforms.uSunGlow.value = lerp(0.15, 0.85, twilight + dayFactor * 0.35);
+  skyUniforms.uSunGlow.value = lerp(0.15, 0.92, twilight + dayFactor * 0.35);
+  skyUniforms.uCloudCover.value = clamp(0.36 + overcast * 0.95, 0.22, 0.96);
+  skyUniforms.uNightFactor.value = nightFactor;
+  sky.position.copy(camera.position);
+  if (starsPoints) starsPoints.position.copy(camera.position);
 
   /* Fog color & density */
   scene.background.copy(workColorB);
   scene.fog.color.copy(workColorB);
-  const baseFog = isFog ? 0.012 : isStorm ? 0.0068 : isRain ? 0.0052 : isSnow ? 0.0058 : lerp(0.0038, 0.0024, dayFactor);
+  const baseFog = isFog ? 0.012 : isStorm ? 0.0068 : isRain ? 0.0052 : isSnow ? 0.0058 : lerp(0.0034, 0.0020, dayFactor);
   scene.fog.density = lerp(scene.fog.density, baseFog, Math.min(1, dt * 3));
 
   /* Sun & Moon positions */
@@ -566,14 +627,40 @@ function updateDayNightCycle(dt) {
   const sx = -sunAzim * orbitR;
   const sy = sunElev * orbitR;
   const sz = -140;
-  sunSprite.position.set(sx, sy, sz);
+  sunSprite.position.set(camera.position.x + sx, Math.max(-40, sy), camera.position.z + sz);
   sunSprite.material.opacity = clamp((sunElev + 0.08) * 3, 0, 0.95) * (1 - overcast * 0.8);
-  skyUniforms.uSunDir.value.set(sx, Math.max(0.05, sy), sz).normalize();
+  skyUniforms.uSunDir.value.set(sx, Math.max(0.04, sy), sz).normalize();
 
-  moonSprite.position.set(-sx * 0.85, Math.max(40, -sy * 0.85), -260);
+  const mx = -sx * 0.85, my = Math.max(40, -sy * 0.85), mz = -260;
+  moonSprite.position.set(camera.position.x + mx, my, camera.position.z + mz);
   moonSprite.material.opacity = clamp(nightFactor * 1.2 - 0.2, 0, 0.92) * (1 - overcast * 0.7);
+  skyUniforms.uMoonDir.value.set(mx, my, mz).normalize();
   if (starsPoints) {
     starsPoints.material.opacity = clamp((nightFactor - 0.35) * 1.5, 0, 0.88) * (1 - overcast * 0.9);
+  }
+
+  /* Sync Animated Missouri River Water Shader with live Sky, Sun & Fog */
+  if (city && city.waterUniforms) {
+    const wu = city.waterUniforms;
+    wu.uSkyColor.value.copy(workColorB).lerp(workColorA, 0.25);
+    wu.uDeepColor.value.setRGB(
+      lerp(0.025, 0.06, dayFactor),
+      lerp(0.065, 0.17, dayFactor),
+      lerp(0.11, 0.24, dayFactor)
+    );
+    wu.uShallowColor.value.setRGB(
+      lerp(0.06, 0.16, dayFactor),
+      lerp(0.15, 0.36, dayFactor),
+      lerp(0.20, 0.42, dayFactor)
+    );
+    wu.uSunDir.value.copy(sunElev > -0.05 ? skyUniforms.uSunDir.value : skyUniforms.uMoonDir.value);
+    wu.uSunColor.value.setRGB(
+      lerp(0.42, 1.0, dayFactor),
+      lerp(0.58, 0.86 - twilight * 0.25, dayFactor),
+      lerp(0.85, 0.62 - twilight * 0.35, dayFactor)
+    );
+    wu.uFogColor.value.copy(scene.fog.color);
+    wu.uFogDensity.value = scene.fog.density;
   }
 
   /* Directional Light & Player-Tracking Shadow Camera */
@@ -2797,6 +2884,67 @@ function buildBoat(color = 0x3e4d5a) {
   return { group };
 }
 
+function buildSpeedboat(color = 0xd94638) {
+  const group = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({ color, roughness: 0.42, metalness: 0.35, flatShading: true });
+  const deckMat = new THREE.MeshStandardMaterial({ color: 0xe6e2d8, roughness: 0.65, flatShading: true });
+  const tubeMat = new THREE.MeshStandardMaterial({ color: 0x22262c, roughness: 0.82, flatShading: true });
+  const chromeMat = new THREE.MeshStandardMaterial({ color: 0xc8d2dc, roughness: 0.25, metalness: 0.85, flatShading: true });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0x102a3d, roughness: 0.1, metalness: 0.9, transparent: true, opacity: 0.82, flatShading: true });
+
+  /* Sleek V-hull & inflatable RHIB side pontoons */
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.72, 5.4), hullMat);
+  hull.position.y = 0.16;
+  group.add(hull);
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.16, 4.8), deckMat);
+  deck.position.set(0, 0.56, 0.15);
+  group.add(deck);
+  for (const sx of [-1.14, 1.14]) {
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 5.3, 8), tubeMat);
+    tube.rotation.x = Math.PI / 2;
+    tube.position.set(sx, 0.36, 0.1);
+    group.add(tube);
+  }
+  const bow = new THREE.Mesh(new THREE.ConeGeometry(1.35, 2.2, 4), hullMat);
+  bow.rotation.x = -Math.PI / 2;
+  bow.rotation.z = Math.PI / 4;
+  bow.scale.set(1.15, 1.0, 0.42);
+  bow.position.set(0, 0.24, -3.75);
+  group.add(bow);
+
+  /* Center Console, Raked Sport Windshield & Roll Bar */
+  const consoleBox = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.95, 1.25), deckMat);
+  consoleBox.position.set(0, 0.98, -0.35);
+  group.add(consoleBox);
+  const shield = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.56, 0.1), glassMat);
+  shield.position.set(0, 1.38, -0.95);
+  shield.rotation.x = -0.52;
+  group.add(shield);
+  const arch = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.14, 0.16), chromeMat);
+  arch.position.set(0, 2.05, 1.45);
+  group.add(arch);
+  for (const sx of [-0.95, 0.95]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 1.45, 6), chromeMat);
+    leg.position.set(sx, 1.32, 1.45);
+    group.add(leg);
+  }
+  /* Twin High-Output Outboards */
+  for (const ex of [-0.52, 0.52]) {
+    const eng = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.88, 0.48), tubeMat);
+    eng.position.set(ex, 0.42, 2.86);
+    group.add(eng);
+  }
+  /* Port/Starboard Nav Lights */
+  const navL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 5, 4), new THREE.MeshBasicMaterial({ color: 0xff3b3b, toneMapped: false }));
+  navL.position.set(-0.98, 2.08, 1.45);
+  const navR = new THREE.Mesh(new THREE.SphereGeometry(0.08, 5, 4), new THREE.MeshBasicMaterial({ color: 0x3bff7a, toneMapped: false }));
+  navR.position.set(0.98, 2.08, 1.45);
+  group.add(navL, navR);
+
+  group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return { group };
+}
+
 const SCORCHED_WRECK_MAT = new THREE.MeshStandardMaterial({ color: 0x1a191c, roughness: 0.96, metalness: 0.2, flatShading: true });
 
 function registerCarHitMeshes(v) {
@@ -3065,15 +3213,17 @@ function makePlaneObject(spot) {
   return v;
 }
 function makeBoatObject(spot) {
-  const model = buildBoat(spot.color || 0xd8d0c0);
+  const isSpeed = spot.boatKind === 'speedboat';
+  const model = isSpeed ? buildSpeedboat(spot.color || 0xd94638) : buildBoat(spot.color || 0x3a4a58);
   const v = {
-    type: 'boat', model, group: model.group,
-    x: spot.x, z: spot.z, y: -0.2,
+    type: 'boat', boatKind: isSpeed ? 'speedboat' : 'gunboat',
+    model, group: model.group,
+    x: spot.x, z: spot.z, y: -0.18,
     heading: spot.heading || 0, pitch: 0, roll: 0,
-    speed: 0, maxSpeed: 18,
+    speed: 0, maxSpeed: isSpeed ? 27 : 19,
     kind: spot.kind || 'parked', controlled: false,
-    color: spot.color || 0xd8d0c0, halfW: 1.4, halfL: 3.4,
-    hp: 190, maxHp: 190, onFire: false, wrecked: false
+    color: spot.color || 0x3a4a58, halfW: isSpeed ? 1.25 : 1.45, halfL: isSpeed ? 3.0 : 3.5,
+    hp: isSpeed ? 145 : 210, maxHp: isSpeed ? 145 : 210, onFire: false, wrecked: false
   };
   v.group.position.set(v.x, v.y, v.z);
   v.group.rotation.y = v.heading;
@@ -6069,27 +6219,64 @@ function updateDrivenPlane(dt, v) {
   updateVehicleWeapons(dt, v);
 }
 function updateDrivenBoat(dt, v) {
-  const throttle = Math.max(keys.KeyW ? 1 : 0, gamepadState.throttle);
-  const brake = Math.max(keys.KeyS ? 1 : 0, gamepadState.brake);
-  const steer = (keys.KeyA ? 1 : 0) - (keys.KeyD ? 1 : 0) + gamepadState.steer;
-  if (throttle) v.speed += 5 * dt;
-  if (brake) v.speed -= 8 * dt;
-  if (!throttle && !brake) v.speed *= 1 - 1.6 * dt;
-  v.speed = clamp(v.speed, -4, v.maxSpeed);
-  if (Math.abs(v.speed) > 0.4) v.heading += steer * dt * 1.2 * Math.sign(v.speed);
+  const throttle = Math.max((keys.KeyW || keys.ArrowUp) ? 1 : 0, gamepadState.throttle);
+  const brake = Math.max((keys.KeyS || keys.ArrowDown) ? 1 : 0, gamepadState.brake);
+  const boost = (keys.ShiftLeft || keys.ShiftRight) && throttle > 0.1 ? 1.24 : 1.0;
+  const steer = ((keys.KeyA || keys.ArrowLeft) ? 1 : 0) - ((keys.KeyD || keys.ArrowRight) ? 1 : 0) + gamepadState.steer;
+  const accel = v.boatKind === 'speedboat' ? 14.5 : 9.2;
+  if (throttle) v.speed += accel * boost * dt;
+  if (brake) v.speed -= 11.5 * dt;
+  if (!throttle && !brake) v.speed *= Math.exp(-dt * 1.45);
+  v.speed = clamp(v.speed, -6, v.maxSpeed * boost);
+  if (Math.abs(v.speed) > 0.35) {
+    const turnRate = v.boatKind === 'speedboat' ? 1.65 : 1.22;
+    v.heading += steer * dt * turnRate * Math.sign(v.speed);
+  }
   const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
   const nx = v.x + fx * v.speed * dt;
   const nz = v.z + fz * v.speed * dt;
-  if (Math.abs(nx) < KC.WORLD_LIMIT && Math.abs(nz) < KC.WORLD_LIMIT) { v.x = nx; v.z = nz; }
-  else v.speed *= -0.3;
-  /* buoyancy: snap to water level */
-  const waterLevel = -0.25;
-  v.y = lerp(v.y, waterLevel + Math.sin(gameTime * 1.4 + v.x * 0.1) * 0.12, 1 - Math.exp(-dt * 3));
-  v.roll = lerp(v.roll, steer * 0.06 * (v.speed / v.maxSpeed), 1 - Math.exp(-dt * 3));
+
+  /* Keep watercraft inside the Missouri River channel (prevent driving up onto dry concrete!) */
+  const inRiver = G.gameMode === 'bf'
+    ? (nx <= -145 && nx >= -390 && Math.abs(nz) < 350)
+    : (nz <= -198 && nz >= -435 && Math.abs(nx) < 310);
+  if (inRiver) {
+    v.x = nx;
+    v.z = nz;
+  } else {
+    /* Gently slide along riverbank instead of getting stuck */
+    if (G.gameMode === 'bf') {
+      v.x = clamp(nx, -390, -145);
+      v.z = clamp(nz, -350, 350);
+    } else {
+      v.x = clamp(nx, -310, 310);
+      v.z = clamp(nz, -435, -198);
+    }
+    v.speed *= 0.65;
+  }
+
+  /* Dynamic wave buoyancy, bow planing lift at high speed, and crisp turn banking */
+  const waterLevel = G.gameMode === 'bf' ? -0.16 : -0.22;
+  const waveBob = Math.sin(gameTime * 2.1 + v.x * 0.12 + v.z * 0.08) * 0.11;
+  const spdRatio = clamp(Math.abs(v.speed) / Math.max(1, v.maxSpeed), 0, 1.2);
+  v.y = lerp(v.y, waterLevel + waveBob + spdRatio * 0.14, 1 - Math.exp(-dt * 5));
+  v.pitch = lerp(v.pitch || 0, clamp(v.speed / Math.max(1, v.maxSpeed), -0.3, 1) * 0.11 + Math.cos(gameTime * 1.8 + v.x * 0.1) * 0.025, 1 - Math.exp(-dt * 4.5));
+  v.roll = lerp(v.roll || 0, steer * 0.18 * spdRatio, 1 - Math.exp(-dt * 4.5));
   v.group.position.set(v.x, v.y, v.z);
+  v.group.rotation.order = 'YXZ';
   v.group.rotation.set(v.pitch, v.heading, v.roll);
   player.pos.set(v.x, v.y + 1.2, v.z);
-  G.sound.updateEngine(Math.abs(v.speed), throttle);
+  G.sound.updateEngine(Math.abs(v.speed) * 1.1, throttle);
+
+  /* Animated white foam wake & bow spray particles */
+  v.wakeTimer = (v.wakeTimer || 0) - dt;
+  if (Math.abs(v.speed) > 2.2 && v.wakeTimer <= 0) {
+    v.wakeTimer = 0.055;
+    const rx = Math.cos(v.heading), rz = -Math.sin(v.heading);
+    const sternX = v.x - fx * 3.1, sternZ = v.z - fz * 3.1;
+    spawnParticles(sternX + rx * 0.65, waterLevel + 0.12, sternZ + rz * 0.65, 0xdff4ff, 2, 1.8 + spdRatio * 2.4, 0.45, 4.5);
+    spawnParticles(sternX - rx * 0.65, waterLevel + 0.12, sternZ - rz * 0.65, 0xdff4ff, 2, 1.8 + spdRatio * 2.4, 0.45, 4.5);
+  }
   updateVehicleWeapons(dt, v);
 }
 function updateDrivenCar(dt) {
@@ -7945,6 +8132,11 @@ function drawMinimap() {
     if (!car.isPolice || car.controlled) continue;
     blip(car.x, car.z, '#65b8ff', 3, 'square');
   }
+  /* Watercraft & Aircraft icons on minimap */
+  for (const b of boats) {
+    if (b.wrecked || b.controlled) continue;
+    blip(b.x, b.z, '#4de2ff', 3.4, 'diamond');
+  }
   /* Multiplayer session peers on minimap */
   if (KC.multiplayer) {
     for (const peer of KC.multiplayer.peers.values()) {
@@ -7989,7 +8181,7 @@ function updateSpeedHUD() {
     let label = v.isPolice ? 'KCPD CRUISER' : (v.style === 'humvee' ? 'TACTICAL HUMVEE' : 'VULCAN GT');
     if (v.type === 'heli') label = G.gameMode === 'bf' ? 'AH-64 GUNSHIP' : 'KC POLICE HELI';
     else if (v.type === 'plane') label = G.gameMode === 'bf' ? 'F-26 SKYHAWK JET' : 'KC SKYHAWK';
-    else if (v.type === 'boat') label = G.gameMode === 'bf' ? 'PATROL GUNBOAT' : 'KC RIVER RUNNER';
+    else if (v.type === 'boat') label = v.boatKind === 'speedboat' ? (G.gameMode === 'bf' ? 'ASSAULT RHIB' : 'KC RIVER RUNNER') : (G.gameMode === 'bf' ? 'PATROL GUNBOAT' : 'KCPD PATROL BOAT');
     const hullPct = v.maxHp ? Math.max(0, Math.round((v.hp / v.maxHp) * 100)) : 100;
     nameEl.textContent = v.onFire ? (label + ' · ON FIRE! ' + hullPct + '%') : (label + ' · HULL ' + hullPct + '%');
   }
@@ -8168,7 +8360,8 @@ function updateHUD() {
     } else if (preferVendor) {
       vehiclePrompt.innerHTML = '<span class="key">E</span> ' + vendorCart.name;
     } else if (carNear) {
-      vehiclePrompt.innerHTML = '<span class="key">F</span> ENTER VEHICLE';
+      const vLabel = nearestCar.type === 'heli' ? 'HELICOPTER' : nearestCar.type === 'plane' ? 'AIRCRAFT' : nearestCar.type === 'boat' ? (nearestCar.boatKind === 'speedboat' ? 'SPEEDBOAT' : 'PATROL GUNBOAT') : (nearestCar.style === 'humvee' ? 'HUMVEE' : 'VEHICLE');
+      vehiclePrompt.innerHTML = '<span class="key">F</span> ENTER ' + vLabel;
     }
   }
 
