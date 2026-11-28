@@ -25,7 +25,7 @@ const $ = (id) => document.getElementById(id);
 const viewportEl = $('viewport');
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 /* Authentic PS1-style WebGL RenderTarget + GLSL Bayer 15-bit Post-Processing */
-const PS1_SCALE = 2.65;
+const PS1_SCALE = 1.75;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.domElement.style.width = '100%';
@@ -35,15 +35,15 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
 else renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.14;
+renderer.toneMappingExposure = 1.18;
 renderer.autoClear = false;
 renderer.domElement.id = 'game-canvas';
 viewportEl.appendChild(renderer.domElement);
 
 function getPS1Size() {
   return {
-    w: Math.max(320, Math.floor(window.innerWidth / PS1_SCALE)),
-    h: Math.max(180, Math.floor(window.innerHeight / PS1_SCALE))
+    w: Math.max(420, Math.floor(window.innerWidth / PS1_SCALE)),
+    h: Math.max(240, Math.floor(window.innerHeight / PS1_SCALE))
   };
 }
 const ps1Init = getPS1Size();
@@ -60,7 +60,7 @@ const postUniforms = {
   uResolution: { value: new THREE.Vector2(ps1Init.w, ps1Init.h) },
   uTime: { value: 0 },
   uChroma: { value: 0 },
-  uScanlines: { value: 0.14 }
+  uScanlines: { value: 0.08 }
 };
 const postMat = new THREE.ShaderMaterial({
   depthTest: false,
@@ -87,29 +87,29 @@ const postMat = new THREE.ShaderMaterial({
     'void main(){',
     '  vec2 texel = 1.0 / uResolution;',
     '  vec2 pxUv = (floor(vUv * uResolution) + 0.5) * texel;',
-    '  float ca = (0.0008 + uChroma * 0.0065) * length(vUv - 0.5) * 2.0;',
+    '  float ca = (uChroma * 0.0055) * length(vUv - 0.5) * 2.0;',
     '  vec3 col;',
-    '  col.r = texture2D(tDiffuse, clamp(pxUv + vec2(ca, 0.0), 0.001, 0.999)).r;',
-    '  col.g = texture2D(tDiffuse, pxUv).g;',
-    '  col.b = texture2D(tDiffuse, clamp(pxUv - vec2(ca, 0.0), 0.001, 0.999)).b;',
+    '  if (ca > 0.0001) {',
+    '    col.r = texture2D(tDiffuse, clamp(pxUv + vec2(ca, 0.0), 0.001, 0.999)).r;',
+    '    col.g = texture2D(tDiffuse, pxUv).g;',
+    '    col.b = texture2D(tDiffuse, clamp(pxUv - vec2(ca, 0.0), 0.001, 0.999)).b;',
+    '  } else {',
+    '    col = texture2D(tDiffuse, pxUv).rgb;',
+    '  }',
     '  /* Subtle 4-tap highlight halation / bloom for muzzle flash, lights & neon */',
     '  vec3 b1 = texture2D(tDiffuse, clamp(pxUv + vec2(texel.x * 2.0, 0.0), 0.0, 1.0)).rgb;',
     '  vec3 b2 = texture2D(tDiffuse, clamp(pxUv - vec2(texel.x * 2.0, 0.0), 0.0, 1.0)).rgb;',
     '  vec3 b3 = texture2D(tDiffuse, clamp(pxUv + vec2(0.0, texel.y * 2.0), 0.0, 1.0)).rgb;',
     '  vec3 b4 = texture2D(tDiffuse, clamp(pxUv - vec2(0.0, texel.y * 2.0), 0.0, 1.0)).rgb;',
-    '  vec3 bloom = max((b1 + b2 + b3 + b4) * 0.25 - vec3(0.62), vec3(0.0));',
-    '  col += bloom * 0.55;',
-    '  /* Gritty PS1 realistic color grading & contrast */',
-    '  float luma = dot(col, vec3(0.299, 0.587, 0.114));',
-    '  col = mix(vec3(luma), col, 0.92);',
-    '  col = clamp((col - 0.02) * 1.08, 0.0, 1.0);',
+    '  vec3 bloom = max((b1 + b2 + b3 + b4) * 0.25 - vec3(0.68), vec3(0.0));',
+    '  col += bloom * 0.42;',
     '  /* Authentic PS1 4x4 Bayer Ordered Dithering + 15-bit RGB (32 levels/channel) */',
     '  float dither = (bayer4(vUv * uResolution) - 0.5) / 31.0;',
     '  col = floor(clamp(col + dither, 0.0, 1.0) * 31.0 + 0.5) / 31.0;',
-    '  /* Subtle CRT scanline modulation & edge vignette */',
+    '  /* Subtle CRT scanline modulation & soft edge vignette */',
     '  float scan = 1.0 - uScanlines * (0.5 + 0.5 * sin(vUv.y * uResolution.y * 3.14159265 * 2.0));',
     '  vec2 vc = vUv * 2.0 - 1.0;',
-    '  float vig = 1.0 - dot(vc, vc) * 0.14;',
+    '  float vig = 1.0 - dot(vc, vc) * 0.10;',
     '  gl_FragColor = vec4(col * scan * vig, 1.0);',
     '}'
   ].join('\n')
@@ -596,10 +596,10 @@ function updateDayNightCycle(dt) {
   if (twilight > 0) sunMoonLight.color.lerp(duskCol, twilight * 0.75);
   sunMoonLight.intensity = lerp(1.55, 3.1, dayFactor) * (1 - overcast * 0.4) + state.lightningFlash * 4.5;
 
-  hemi.color.copy(new THREE.Color(0x4c6288)).lerp(new THREE.Color(0x9ec8ff), dayFactor);
-  hemi.groundColor.copy(new THREE.Color(0x08080c)).lerp(new THREE.Color(0x38343a), dayFactor);
-  hemi.intensity = lerp(0.65, 1.35, dayFactor) + state.lightningFlash * 1.5;
-  ambient.intensity = lerp(0.45, 0.95, dayFactor);
+  hemi.color.copy(new THREE.Color(0x637ba6)).lerp(new THREE.Color(0xaed4ff), dayFactor);
+  hemi.groundColor.copy(new THREE.Color(0x1b2029)).lerp(new THREE.Color(0x464840), dayFactor);
+  hemi.intensity = lerp(0.95, 1.45, dayFactor) + state.lightningFlash * 1.5;
+  ambient.intensity = lerp(0.68, 1.05, dayFactor);
 
   /* City Emissive Windows, Streetlamps, Light Pools & Wet Roads */
   if (city) {
@@ -3725,30 +3725,31 @@ function updateHostile(actor, dt, peersList) {
   if (!actor.alive) return;
   const pos = actor.group.position;
   let target = activeVehicle ? activeVehicle.group.position : player.pos;
+  let engagingHostile = false;
+  actor.currentTarget = null;
   if (actor.military) {
-    /* Military: seek cover/vehicles, engage player if seen */
+    /* Military OPFOR: engage player ONLY if in playing mode & close with real LOS;
+       otherwise engage nearby BLUEFOR allies or advance on neutral/player sectors */
     const playerDist = dist2(pos.x, pos.z, player.pos.x, player.pos.z);
-    if (playerDist < 45 && hasLineOfSight(new THREE.Vector3(pos.x, 1.45, pos.z), new THREE.Vector3(player.pos.x, 1.15, player.pos.z))) {
+    let nearestAlly = null, allyDist = 52;
+    for (const a of allies) {
+      if (!a.alive) continue;
+      const d = dist2(pos.x, pos.z, a.group.position.x, a.group.position.z);
+      if (d < allyDist) { allyDist = d; nearestAlly = a; }
+    }
+    if (G.mode === 'playing' && playerDist < 48 && hasLineOfSight(new THREE.Vector3(pos.x, 1.45, pos.z), new THREE.Vector3(player.pos.x, 1.15, player.pos.z))) {
       target = (activeVehicle ? activeVehicle.group.position : player.pos);
-    } else {
-      /* Move toward nearest vehicle as cover */
-      let nearestV = null, nvD = 40;
-      for (const v of cars.concat(helis, boats)) {
-        const d = dist2(pos.x, pos.z, v.x, v.z);
-        if (d < nvD) { nvD = d; nearestV = v; }
+      engagingHostile = true;
+    } else if (nearestAlly) {
+      target = { x: nearestAlly.group.position.x, z: nearestAlly.group.position.z };
+      actor.currentTarget = { x: nearestAlly.group.position.x, z: nearestAlly.group.position.z, actor: nearestAlly };
+      engagingHostile = true;
+    } else if (bfZones.length) {
+      if (!actor.targetZone || actor.targetZone.owner === 'enemy') {
+        const candidates = bfZones.filter((z) => z.owner !== 'enemy');
+        actor.targetZone = candidates.length ? KC.pick(candidates) : KC.pick(bfZones);
       }
-      if (nearestV) {
-        target = { x: nearestV.x, z: nearestV.z };
-      } else {
-        if (!actor.wanderX) { actor.wanderX = pos.x; actor.wanderZ = pos.z; actor.nextWander = rand(4, 8); }
-        actor.nextWander -= dt;
-        if (actor.nextWander <= 0 || dist2(pos.x, pos.z, actor.wanderX, actor.wanderZ) < 1.5) {
-          actor.wanderX = clamp(pos.x + rand(-20, 20), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
-          actor.wanderZ = clamp(pos.z + rand(-20, 20), -KC.WORLD_LIMIT + 10, KC.WORLD_LIMIT - 10);
-          actor.nextWander = rand(5, 10);
-        }
-        target = { x: actor.wanderX, z: actor.wanderZ };
-      }
+      target = { x: actor.targetZone.x, z: actor.targetZone.z };
     }
   } else if (actor.gangster) {
     if (!actor.wanderX) { actor.wanderX = pos.x; actor.wanderZ = pos.z; actor.nextWander = rand(3, 7); actor.randomShootTimer = rand(4, 9); }
@@ -3770,10 +3771,12 @@ function updateHostile(actor, dt, peersList) {
     if (criminal) {
       target = { x: criminal.group.position.x, z: criminal.group.position.z };
       actor.currentTarget = { x: criminal.group.position.x, z: criminal.group.position.z, actor: criminal };
+      engagingHostile = true;
     } else {
       actor.currentTarget = null;
       if (state.wanted > 0) {
         target = activeVehicle ? activeVehicle.group.position : player.pos;
+        engagingHostile = true;
       } else {
         if (!actor.wanderX) { actor.wanderX = pos.x; actor.wanderZ = pos.z; actor.nextWander = rand(4, 8); }
         actor.nextWander -= dt;
@@ -3785,6 +3788,8 @@ function updateHostile(actor, dt, peersList) {
         target = { x: actor.wanderX, z: actor.wanderZ };
       }
     }
+  } else {
+    engagingHostile = true;
   }
   const tx = target.x, tz = target.z;
   const dx = tx - pos.x, dz = tz - pos.z;
@@ -3863,7 +3868,7 @@ function updateHostile(actor, dt, peersList) {
       randomGangShoot(actor);
     }
   }
-  if (!actor.gangster && actor.fireTimer <= 0 && actor.hasLos && dist < (actor.type === 'cop' ? 34 : 30)) {
+  if (engagingHostile && !actor.gangster && actor.fireTimer <= 0 && actor.hasLos && dist < (actor.military ? 48 : actor.type === 'cop' ? 34 : 30)) {
     actor.fireTimer = actor.shootCooldown * rand(0.8, 1.25);
     hostileShoot(actor, dist);
   }
@@ -3929,8 +3934,17 @@ function hostileShoot(actor, dist) {
   if (actor.type === 'cop') G.sound.policeShot(); else G.sound.shoot('pistol');
   if (hit) {
     if (ct && ct.actor && ct.actor.alive) {
-      damageActor(ct.actor, actor.damage, to, false);
-    } else {
+      if (ct.actor.type === 'ally') {
+        ct.actor.hp -= actor.damage;
+        spawnParticles(to.x, to.y, to.z, 0x9e1818, 4, 2.5, 0.3, 10);
+        if (ct.actor.hp <= 0) {
+          ct.actor.alive = false;
+          spawnParticles(to.x, 1.1, to.z, 0x9e1818, 10, 4, 0.45, 11);
+        }
+      } else {
+        damageActor(ct.actor, actor.damage, to, false);
+      }
+    } else if (G.mode === 'playing') {
       applyPlayerDamage(actor.damage);
     }
   } else if (G.sound.bulletWhiz) {
@@ -7114,7 +7128,11 @@ function startGame() {
     notify('ROLEPLAY', 'PRESS [H] FOR EMOTES, SUPPLIES & RP ROLES', 'money');
     G.sound.ui();
   } else {
-    /* Battlefield: reset tickets, squads & enter Tactical Deployment mode (mouse free!) */
+    /* Battlefield: sunlit afternoon tactical daylight (unless custom time locked) */
+    if (worldSettings.dayNightMode === 'DYNAMIC') {
+      state.timeMinutes = 870;
+      updateDayNightCycle(0.01);
+    }
     bfTickets = { player: 200, enemy: 200 };
     bfReinforceTimer = 14;
     clearThugs();
@@ -8355,6 +8373,7 @@ function init() {
   const spawn = G.gameMode === 'bf' && city.spawnPoints ? city.spawnPoints.player[0] : findSafeSpawn();
   resetPlayer(spawn);
   applyWorldSettings(null, false, true);
+  if (G.gameMode === 'bf' && worldSettings.dayNightMode === 'DYNAMIC') state.timeMinutes = 870;
   updateDayNightCycle(0.01);
   updateMenuCamera(0);
   updateClock();
